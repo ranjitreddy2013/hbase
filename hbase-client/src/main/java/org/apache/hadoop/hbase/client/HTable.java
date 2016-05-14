@@ -39,6 +39,8 @@ import java.util.concurrent.TimeUnit;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 
+import com.mapr.db.shadow.ShadowTable;
+import com.mapr.db.shadow.ShadowTableUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.classification.InterfaceAudience;
@@ -152,6 +154,8 @@ public class HTable implements HTableInterface {
   private boolean cleanupPoolOnClose; // shutdown the pool in close()
   private boolean cleanupConnectionOnClose; // close the connection in close()
 
+  private ShadowTable shadowTable;
+
   /** The Async process for puts with autoflush set to false or multiputs */
   protected AsyncProcess<Object> ap;
   private RpcRetryingCallerFactory rpcCallerFactory;
@@ -202,6 +206,7 @@ public class HTable implements HTableInterface {
   public HTable(Configuration conf, final TableName tableName)
   throws IOException {
     if ((maprTable_ = initIfMapRTable(conf, tableName)) != null) {
+      checkForShadowTable(conf, maprTable_);
       return; // If it was a MapR table, our work is done
     }
 
@@ -231,6 +236,7 @@ public class HTable implements HTableInterface {
     this.connection = connection;
     if ((maprTable_ = initIfMapRTable(connection.getConfiguration(), tableName)) != null) {
       // If it was a MapR table, our work is done
+      checkForShadowTable(connection.getConfiguration(), maprTable_);
       return;
     }
 
@@ -242,7 +248,22 @@ public class HTable implements HTableInterface {
     this.pool = getDefaultExecutor(this.configuration);
     this.finishSetup();
   }
-   
+
+  private void checkForShadowTable(Configuration conf, AbstractHTable table) throws IOException {
+    // checks if table is shadow or not
+    String originalTablePath = ShadowTableUtils.originalTablePathFor(maprTable_);
+
+    // if there's an original, it means that `table` is a shadow one
+    if (originalTablePath != null) {
+      try {
+        this.shadowTable = new ShadowTable(table,
+                initIfMapRTable(conf, TableName.valueOf(originalTablePath)));
+      } catch (Exception ex) {
+        LOG.error("Error creating original table representation", ex);
+      }
+    }
+  }
+
   public static ThreadPoolExecutor getDefaultExecutor(Configuration conf) {
     int maxThreads = conf.getInt("hbase.htable.threads.max", Integer.MAX_VALUE);
     if (maxThreads == 0) {
@@ -293,6 +314,7 @@ public class HTable implements HTableInterface {
       throws IOException {
     if ((maprTable_ = initIfMapRTable(conf, tableName)) != null) {
       // If it was a MapR table, our work is done
+      checkForShadowTable(conf, maprTable_);
       return;
     }
     this.connection = HConnectionManager.getConnection(conf);
@@ -360,6 +382,7 @@ public class HTable implements HTableInterface {
     this.connection = connection;
     if ((maprTable_ = initIfMapRTable(connection.getConfiguration(), tableName)) != null) {
       // If it was a MapR table, our work is done
+      checkForShadowTable(connection.getConfiguration(), maprTable_);
       return;
     }
 
@@ -880,6 +903,9 @@ public class HTable implements HTableInterface {
   @Override
   public ResultScanner getScanner(final Scan scan) throws IOException {
     if (maprTable_ != null) {
+      if (shadowTable != null) {
+        return ShadowTableUtils.getScanner(shadowTable, scan);
+      }
       return maprTable_.getScanner(scan);
     }
     if (scan.getBatch() > 0 && scan.isSmall()) {
@@ -932,6 +958,9 @@ public class HTable implements HTableInterface {
   @Override
   public Result get(final Get get) throws IOException {
     if (maprTable_ != null) {
+      if (shadowTable != null) {
+        return ShadowTableUtils.get(shadowTable, get);
+      }
       return maprTable_.get(get);
     }
     // have to instanatiate this and set the priority here since in protobuf util we don't pass in
@@ -955,6 +984,9 @@ public class HTable implements HTableInterface {
   @Override
   public Result[] get(List<Get> gets) throws IOException {
     if (maprTable_ != null) {
+      if (shadowTable != null) {
+        return ShadowTableUtils.get(shadowTable, gets);
+      }
       return maprTable_.get(gets);
     }
     if (gets.size() == 1) {
@@ -1039,6 +1071,10 @@ public class HTable implements HTableInterface {
   public void delete(final Delete delete)
   throws IOException {
     if (maprTable_ != null) {
+      if (shadowTable != null) {
+        ShadowTableUtils.delete(shadowTable, delete);
+        return;
+      }
       maprTable_.delete(delete);
       return;
     }
@@ -1067,6 +1103,11 @@ public class HTable implements HTableInterface {
   public void delete(final List<Delete> deletes)
   throws IOException {
     if (maprTable_ != null) {
+      if (shadowTable != null) {
+        //TODO
+//        ShadowTableUtils.delete(shadowTable, delete);
+        return;
+      }
       maprTable_.delete(deletes);
       return;
     }
@@ -1095,6 +1136,10 @@ public class HTable implements HTableInterface {
   public void put(final Put put)
       throws InterruptedIOException, RetriesExhaustedWithDetailsException {
     if (maprTable_ != null) {
+      if (shadowTable != null) {
+        ShadowTableUtils.put(shadowTable, put);
+        return;
+      }
       maprTable_.put(put);
       return;
     }

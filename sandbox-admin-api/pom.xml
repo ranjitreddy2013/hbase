@@ -1,0 +1,72 @@
+<?xml version="1.0"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <artifactId>hbase</artifactId>
+    <groupId>org.apache.hbase</groupId>
+    <version>0.98.12-mapr-1506</version>
+    <relativePath>..</relativePath>
+  </parent>
+
+  <artifactId>sandbox-admin-api</artifactId>
+  <name>HBase - MapR-DB Sandbox Admin API</name>
+  <description>MapR-DB Sandbox Admin API to control sandbox lifecycle (creation, pushing, deletion)</description>
+
+  <repositories>
+    <repository>
+      <id>mapr-releases</id>
+      <url>http://repository.mapr.com/maven/</url>
+      <snapshots><enabled>false</enabled></snapshots>
+      <releases><enabled>true</enabled></releases>
+    </repository>
+  </repositories>
+
+  <properties>
+    <mapr.version>5.0.9-mapr</mapr.version>
+  </properties>
+
+
+  <dependencies>
+    <dependency>
+      <groupId>com.mapr.cli</groupId>
+      <artifactId>maprcli</artifactId>
+      <version>5.0.9-mapr</version>
+      <exclusions>
+        <exclusion>
+          <groupId>com.mapr.hadoop</groupId>
+          <artifactId>maprfs</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-common</artifactId>
+      <version>2.7.0-mapr-1506</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.mapr.hadoop</groupId>
+      <artifactId>maprfs</artifactId>
+      <version>${mapr.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+    </dependency>
+  </dependencies>
+
+  <profiles>
+    <profile>
+      <id>philips-sandbox</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <properties>
+        <surefire.skipFirstPart>false</surefire.skipFirstPart>
+      </properties>
+    </profile>
+  </profiles>
+</project>

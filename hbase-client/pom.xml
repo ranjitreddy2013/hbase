@@ -299,5 +299,27 @@
         </dependency>
       </dependencies>
     </profile>
+
+    <profile>
+      <id>philips-sandbox</id>
+
+      <properties>
+        <hbase.skip-jacoco>false</hbase.skip-jacoco>
+      </properties>
+
+      <build>
+        <plugins>
+          <plugin>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <includes>
+                <include>com/mapr/db/shadow/**.java</include>
+                <include>**/**SandboxTest.java</include>
+              </includes>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
   </profiles>
 </project>

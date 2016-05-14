@@ -2122,6 +2122,20 @@
         </plugins>
       </build>
     </profile>
+    <profile>
+      <id>philips-sandbox</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <properties>
+        <surefire.skipFirstPart>true</surefire.skipFirstPart>
+        <surefire.skipSecondPart>true</surefire.skipSecondPart>
+      </properties>
+      <modules>
+        <module>sandbox-admin-api</module>
+        <module>sandbox-it</module>
+      </modules>
+    </profile>
   </profiles>
   <!-- See http://jira.codehaus.org/browse/MSITE-443 why the settings need to be here and not in pluginManagement. -->
   <reporting>

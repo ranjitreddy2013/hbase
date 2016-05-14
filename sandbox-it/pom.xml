@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <artifactId>hbase</artifactId>
+    <groupId>org.apache.hbase</groupId>
+    <version>0.98.12-mapr-1506</version>
+    <relativePath>..</relativePath>
+  </parent>
+
+  <artifactId>sandbox-it</artifactId>
+  <name>HBase - Sandbox Integration Tests</name>
+  <description>Integration and System tests for Sandbox HBase client</description>
+
+  <properties>
+    <surefire.skipSecondPart>true</surefire.skipSecondPart>
+  </properties>
+
+  <dependencies>
+	<!-- Intra-project dependencies -->
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-client</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>sandbox-admin-api</artifactId>
+    </dependency>
+    
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>sandbox-admin-api</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+
+  <profiles>
+    <profile>
+      <id>philips-sandbox</id>
+      <properties>
+        <surefire.skipFirstPart>false</surefire.skipFirstPart>
+      </properties>
+    </profile>
+  </profiles>
+</project>
