@@ -1,10 +1,14 @@
 package com.mapr.db.sandbox;
 
-import org.apache.hadoop.hbase.client.*;
+import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.ResultScanner;
+import org.apache.hadoop.hbase.client.Scan;
 import org.junit.Test;
 
 import java.io.IOException;
 
+import static com.mapr.db.sandbox.SandboxTestUtils.countRows;
 import static org.junit.Assert.assertEquals;
 
 public class EmptyOriginalTableIntegrationTest extends BaseSandboxIntegrationTest {

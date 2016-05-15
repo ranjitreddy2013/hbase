@@ -1,12 +1,16 @@
 package com.mapr.db.sandbox;
 
+import com.mapr.cliframework.base.CLICommandFactory;
+import com.mapr.db.sandbox.utils.SandboxUtils;
+import com.mapr.fs.MapRFileSystem;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
-import org.apache.hadoop.hbase.client.Result;
-import org.apache.hadoop.hbase.client.ResultScanner;
-import org.junit.*;
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Before;
+import org.junit.BeforeClass;
 
 import java.io.IOException;
 
@@ -20,13 +24,15 @@ public abstract class BaseSandboxIntegrationTest {
 
     protected static Configuration conf;
     protected static HBaseAdmin hba;
-    protected static FileSystem fs;
+    protected static MapRFileSystem fs;
+    protected static CLICommandFactory cmdFactory;
 
     static {
         conf = new Configuration();
         try {
             hba = new HBaseAdmin(conf);
-            fs = FileSystem.get(conf);
+            fs = (MapRFileSystem) FileSystem.get(conf);
+            cmdFactory = CLICommandFactory.getInstance();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -40,14 +46,19 @@ public abstract class BaseSandboxIntegrationTest {
 
     @BeforeClass
     public static void setupOriginalTable() throws IOException {
+        assureWorkingDirExists();
+
+        sandboxAdmin = new SandboxAdmin(new Configuration());
+        originalTablePath = String.format("%s/%s", TABLE_PREFIX, "table");
+        SandboxUtils.createTable(cmdFactory, originalTablePath);
+        SandboxUtils.createTableCF(cmdFactory, originalTablePath, "cf");
+    }
+
+    protected static void assureWorkingDirExists() throws IOException {
         Path tableDirPath = new Path(TABLE_PREFIX);
         if (!fs.exists(tableDirPath)) {
             fs.mkdirs(tableDirPath);
         }
-
-        sandboxAdmin = new SandboxAdmin(new Configuration());
-        originalTablePath = String.format("%s/%s", TABLE_PREFIX, "table");
-        sandboxAdmin.createTable(originalTablePath, "cf");
     }
 
     private static String randomName() {
@@ -55,7 +66,7 @@ public abstract class BaseSandboxIntegrationTest {
     }
 
     @Before
-    public void setupSandbox() {
+    public void setupSandbox() throws SandboxException, IOException {
         sandboxTablePath = String.format("%s_sand", originalTablePath);
         sandboxAdmin.createSandbox(sandboxTablePath, originalTablePath);
     }
@@ -71,14 +82,5 @@ public abstract class BaseSandboxIntegrationTest {
     public static void cleanupOriginalTable() throws IOException {
         sandboxAdmin.deleteTable(originalTablePath);
         fs.delete(new Path(TABLE_PREFIX), false);
-    }
-
-    // Utils
-    static long countRows(ResultScanner scanner) throws IOException {
-        long result = 0L;
-        for (Result r : scanner) {
-            ++result;
-        }
-        return result;
     }
 }

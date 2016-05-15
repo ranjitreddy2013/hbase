@@ -1,17 +1,21 @@
 package com.mapr.db.sandbox;
 
-import org.apache.hadoop.hbase.client.*;
+import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.ResultScanner;
+import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.Test;
 
 import java.io.IOException;
 
+import static com.mapr.db.sandbox.SandboxTestUtils.countRows;
 import static org.junit.Assert.assertEquals;
 
 public class SandboxPushIntegrationTest extends BaseSandboxIntegrationTest {
 
     @Test
-    public void testSandboxCountRows() throws IOException {
+    public void testSandboxCountRows() throws IOException, SandboxException {
         HTable hTableOriginal = new HTable(conf, originalTablePath);
         HTable hTableSandbox = new HTable(conf, sandboxTablePath);
 

@@ -8,6 +8,7 @@ import org.apache.hadoop.hbase.client.mapr.AbstractHTable;
 final public class ShadowTable {
     public final AbstractHTable originalTable;
     public final AbstractHTable table;
+//    public final String proxyFid;
 
     public ShadowTable(AbstractHTable shadowTable, AbstractHTable originalTable) {
         this.table = shadowTable;
