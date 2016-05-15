@@ -8,6 +8,8 @@ import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Test;
+
 
 import java.io.IOException;
 import java.util.List;
