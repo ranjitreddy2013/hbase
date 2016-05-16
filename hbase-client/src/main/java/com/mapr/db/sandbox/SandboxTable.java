@@ -13,6 +13,7 @@ final public class SandboxTable {
     public static final byte[] DEFAULT_DIRTY_CF = DEFAULT_DIRTY_CF_NAME.getBytes();
     public static final byte[] DEFAULT_TID_COL = DEFAULT_TID_COL_NAME.getBytes();
     public static final String METADATA_FILENAME_FORMAT = ".meta_%s"; // shadow table fid
+    public static final String SANDBOX_ENABLED = "sandbox.enabled";
 
     public enum InfoType {
         ORIGINAL_FID,
@@ -52,10 +53,12 @@ final public class SandboxTable {
     public final AbstractHTable originalTable;
     public final AbstractHTable table;
     public final SandboxState state;
+    public final boolean sandboxFeatureEnabled;
 
-    public SandboxTable(AbstractHTable sandboxTable, AbstractHTable originalTable, SandboxState state) {
+    public SandboxTable(AbstractHTable sandboxTable, AbstractHTable originalTable, SandboxState state, boolean sandboxFeatureEnabled) {
         this.table = sandboxTable;
         this.originalTable = originalTable;
         this.state = state;
+        this.sandboxFeatureEnabled = sandboxFeatureEnabled;
     }
 }

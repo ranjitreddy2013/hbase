@@ -1,6 +1,8 @@
 package com.mapr.db.sandbox;
 
+import com.google.common.collect.Lists;
 import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.Put;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -10,6 +12,24 @@ import static com.mapr.db.sandbox.SandboxTestUtils.setCellValue;
 import static org.junit.Assert.assertEquals;
 
 public class SandboxTablePutIntegrationTest extends BaseSandboxIntegrationTest {
+
+  @Test(expected = UnsupportedOperationException.class)
+  public void testPutWithDisabled() throws IOException, SandboxException {
+    Put put = new Put(newRowId);
+    put.add(CF1, COL1, "val".getBytes());
+    conf.set(SandboxTable.SANDBOX_ENABLED, Boolean.FALSE.toString());
+    HTable hTable = new HTable(conf, sandboxTablePath);
+    hTable.put(put);
+  }
+
+  @Test(expected = UnsupportedOperationException.class)
+  public void testBatchPutWithDisabled() throws IOException, SandboxException {
+    Put put = new Put(newRowId);
+    put.add(CF1, COL1, "val".getBytes());
+    conf.set(SandboxTable.SANDBOX_ENABLED, Boolean.FALSE.toString());
+    HTable hTable = new HTable(conf, sandboxTablePath);
+    hTable.put(Lists.newArrayList(put));
+  }
 
   @Test
   public void testPutOnFilledOriginal() throws IOException, SandboxException {

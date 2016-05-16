@@ -22,7 +22,7 @@ public class SandboxTableUtilsTest {
     public void setup() {
         shadowTableTable = mock(AbstractHTable.class);
         originalTable = mock(AbstractHTable.class);
-        sandboxTable = new SandboxTable(shadowTableTable, originalTable, state);
+        sandboxTable = new SandboxTable(shadowTableTable, originalTable, state, true);
     }
 
 //    @Test
@@ -57,7 +57,7 @@ public class SandboxTableUtilsTest {
     public void testEnrichedGet() throws Exception {
         AbstractHTable shadowTableTable = mock(AbstractHTable.class);
         AbstractHTable originalTable = mock(AbstractHTable.class);
-        SandboxTable sandboxTable = new SandboxTable(shadowTableTable, originalTable, state);
+        SandboxTable sandboxTable = new SandboxTable(shadowTableTable, originalTable, state, true);
 
         Get get = mock(Get.class);
         when(get.hasFamilies()).thenReturn(false);

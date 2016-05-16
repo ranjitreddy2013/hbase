@@ -226,6 +226,9 @@ public class HTable implements HTableInterface {
   private void checkForSandboxTable(Configuration conf, AbstractHTable table) throws IOException {
     MapRFileSystem mfs = (MapRFileSystem) FileSystem.get(conf);
 
+    // possibility to override merged view, no mutations are allowed if disabled
+    boolean sandboxFeatureEnabled = conf.getBoolean(SandboxTable.SANDBOX_ENABLED, true);
+
     try {
       EnumMap<SandboxTable.InfoType, String> info = SandboxTableUtils.readSandboxInfo(mfs, table);
 
@@ -234,11 +237,11 @@ public class HTable implements HTableInterface {
                 .pathFromFid(mfs, info.get(SandboxTable.InfoType.ORIGINAL_FID))
                 .toUri().toString();
 
-        AbstractHTable originalTable = initIfMapRTable(conf,
-                TableName.valueOf(originalTablePath));
-        SandboxTable.SandboxState state = SandboxTable.SandboxState.fromString(info.get(SandboxTable.InfoType.SANDBOX_STATE));
+        AbstractHTable originalTable = initIfMapRTable(conf, TableName.valueOf(originalTablePath));
+        SandboxTable.SandboxState state = SandboxTable.SandboxState
+                .fromString(info.get(SandboxTable.InfoType.SANDBOX_STATE));
 
-        this.sandboxTable = new SandboxTable(table, originalTable, state);
+        this.sandboxTable = new SandboxTable(table, originalTable, state, sandboxFeatureEnabled);
       }
     } catch (Exception ex) {
       LOG.error("Error creating original table representation", ex);

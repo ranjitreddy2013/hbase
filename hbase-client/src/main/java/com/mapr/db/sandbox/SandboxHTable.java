@@ -26,6 +26,7 @@ import static com.mapr.db.sandbox.SandboxTableUtils.restrictColumnsForDeletion;
 
 public class SandboxHTable {
     private static final Log LOG = LogFactory.getLog(SandboxHTable.class);
+    private static final String CANNOT_MUTATE_WHEN_DISABLED_MSG = "Cannot mutate sandbox table when disabled";
 
     // assumes cells belong to the same cell
     public final static Comparator<Cell> SAME_ROW_CELL_COMPARATOR = new Comparator<Cell>() {
@@ -49,6 +50,10 @@ public class SandboxHTable {
     };
 
     public static Result get(SandboxTable sandboxTable, final Get get) throws IOException {
+        if (!sandboxTable.sandboxFeatureEnabled) {
+            return sandboxTable.table.get(get);
+        }
+
         Result originalResult = sandboxTable.originalTable.get(get);
         Result shadowResult = sandboxTable.table.get(enrichGet(get));
 
@@ -62,6 +67,10 @@ public class SandboxHTable {
 
 
     public static Result[] get(SandboxTable sandboxTable, List<Get> gets) throws IOException {
+        if (!sandboxTable.sandboxFeatureEnabled) {
+            return sandboxTable.table.get(gets);
+        }
+
         Result[] originalResults = sandboxTable.originalTable.get(gets);
 
         // enrich Gets
@@ -157,6 +166,10 @@ public class SandboxHTable {
     }
 
     public static ResultScanner getScanner(SandboxTable sandboxTable, Scan scan) throws IOException {
+        if (!sandboxTable.sandboxFeatureEnabled) {
+            return sandboxTable.table.getScanner(scan);
+        }
+
         ResultScanner originalScanner = sandboxTable.originalTable.getScanner(scan);
 
         // inject retrieval of shadow record metadata
@@ -171,6 +184,10 @@ public class SandboxHTable {
     }
 
     public static void delete(final SandboxTable sandboxTable, final List<Delete> deletes) throws IOException {
+        if (!sandboxTable.sandboxFeatureEnabled) {
+            throw new UnsupportedOperationException(CANNOT_MUTATE_WHEN_DISABLED_MSG);
+        }
+
         List<Put> puts = Lists.newArrayList();
 //        FluentIterable.from(deletes).transform(new Function<Delete, Put>() {
 //            @Nullable
@@ -192,6 +209,10 @@ public class SandboxHTable {
     }
 
     public static void delete(SandboxTable sandboxTable, Delete delete) throws IOException {
+        if (!sandboxTable.sandboxFeatureEnabled) {
+            throw new UnsupportedOperationException(CANNOT_MUTATE_WHEN_DISABLED_MSG);
+        }
+
         final byte[] rowId = delete.getRow();
 
         try {
@@ -224,6 +245,10 @@ public class SandboxHTable {
      * @param put
      */
     public static void put(SandboxTable sandboxTable, Put put) throws InterruptedIOException {
+        if (!sandboxTable.sandboxFeatureEnabled) {
+            throw new UnsupportedOperationException(CANNOT_MUTATE_WHEN_DISABLED_MSG);
+        }
+
         final byte[] rowId = put.getRow();
         try {
             RowMutations rm = _rowMutationsForPut(new RowMutations(rowId), put);
@@ -280,6 +305,10 @@ public class SandboxHTable {
     }
 
     public static void put(SandboxTable sandboxTable, final List<Put> puts) throws InterruptedIOException {
+        if (!sandboxTable.sandboxFeatureEnabled) {
+            throw new UnsupportedOperationException(CANNOT_MUTATE_WHEN_DISABLED_MSG);
+        }
+
         List<Delete> deletes = FluentIterable.from(puts)
                 .transform(new Function<Put, Delete>() {
                     @Nullable
@@ -723,11 +752,19 @@ public class SandboxHTable {
     }
 
     public static boolean exists(SandboxTable sandboxTable, Get get) throws IOException {
+        if (!sandboxTable.sandboxFeatureEnabled) {
+            return sandboxTable.table.exists(get);
+        }
+
         Result result = get(sandboxTable, get);
         return result != null && !result.isEmpty();
     }
 
     public static Boolean[] exists(SandboxTable sandboxTable, final List<Get> gets) throws IOException {
+        if (!sandboxTable.sandboxFeatureEnabled) {
+            return sandboxTable.table.exists(gets);
+        }
+
         return FluentIterable.from(Lists.newArrayList(get(sandboxTable, gets)))
                 .transform(new Function<Result, Boolean>() {
                     @Nullable
