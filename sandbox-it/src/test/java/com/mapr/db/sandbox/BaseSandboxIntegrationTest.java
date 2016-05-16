@@ -1,10 +1,9 @@
 package com.mapr.db.sandbox;
 
 import com.mapr.cliframework.base.CLICommandFactory;
-import com.mapr.db.sandbox.utils.SandboxUtils;
 import com.mapr.fs.MapRFileSystem;
 import com.mapr.cliframework.base.CLICommandFactory;
-import com.mapr.db.sandbox.utils.SandboxUtils;
+import com.mapr.db.sandbox.utils.SandboxAdminUtils;
 import com.mapr.fs.MapRFileSystem;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
@@ -53,8 +52,8 @@ public abstract class BaseSandboxIntegrationTest {
 
         sandboxAdmin = new SandboxAdmin(new Configuration());
         originalTablePath = String.format("%s/%s", TABLE_PREFIX, "table");
-        SandboxUtils.createTable(cmdFactory, originalTablePath);
-        SandboxUtils.createTableCF(cmdFactory, originalTablePath, "cf");
+        SandboxAdminUtils.createTable(cmdFactory, originalTablePath);
+        SandboxAdminUtils.createTableCF(cmdFactory, originalTablePath, "cf");
     }
 
     protected static void assureWorkingDirExists() throws IOException {

@@ -15,7 +15,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 
-public class SandboxUtils {
+public class SandboxAdminUtils {
     public static Path pathFromFid(MapRFileSystem mfs, String originalFid) throws IOException {
         try {
             return new Path(mfs.getMountPathFid(originalFid));
@@ -52,7 +52,7 @@ public class SandboxUtils {
             DbCommands tableCreateCmd = (DbCommands) cmdFactory.getCLI(tableCreationInput);
             commandOutput = tableCreateCmd.executeRealCommand();
         } catch (Exception e) {
-            SandboxUtils.printErrors(commandOutput);
+            SandboxAdminUtils.printErrors(commandOutput);
             e.printStackTrace(); // TODO handle properly
         }
     }
@@ -70,7 +70,7 @@ public class SandboxUtils {
             DbCfCommands cfCreationCmd = (DbCfCommands) cmdFactory.getCLI(colFamilyCreationInput);
             commandOutput = cfCreationCmd.executeRealCommand();
         } catch (Exception e) {
-            SandboxUtils.printErrors(commandOutput);
+            SandboxAdminUtils.printErrors(commandOutput);
             e.printStackTrace(); // TODO handle properly
         }
     }
@@ -89,7 +89,7 @@ public class SandboxUtils {
             DbCommands tableCreateCmd = (DbCommands) cmdFactory.getCLI(tableCreationInput);
             commandOutput = tableCreateCmd.executeRealCommand();
         } catch (Exception e) {
-            SandboxUtils.printErrors(commandOutput);
+            SandboxAdminUtils.printErrors(commandOutput);
             e.printStackTrace(); // TODO handle properly
         }
     }
@@ -115,7 +115,7 @@ public class SandboxUtils {
             DbReplicaCommands addReplicaCmd = (DbReplicaCommands) cmdFactory.getCLI(addTableReplicaInput);
             commandOutput = addReplicaCmd.executeRealCommand();
         } catch (Exception e) {
-            SandboxUtils.printErrors(commandOutput);
+            SandboxAdminUtils.printErrors(commandOutput);
             e.printStackTrace(); // TODO handle properly
         }
 
@@ -124,7 +124,7 @@ public class SandboxUtils {
             DbUpstreamCommands addUpstreamCmd = (DbUpstreamCommands) cmdFactory.getCLI(addUpstreamTableInput);
             commandOutput = addUpstreamCmd.executeRealCommand();
         } catch (Exception e) {
-            SandboxUtils.printErrors(commandOutput);
+            SandboxAdminUtils.printErrors(commandOutput);
             e.printStackTrace(); // TODO handle properly
         }
     }

@@ -8,7 +8,7 @@ import com.mapr.cli.DbUpstreamCommands;
 import com.mapr.cliframework.base.CLICommandFactory;
 import com.mapr.cliframework.base.CommandOutput;
 import com.mapr.cliframework.base.ProcessedInput;
-import com.mapr.db.sandbox.utils.SandboxUtils;
+import com.mapr.db.sandbox.utils.SandboxAdminUtils;
 import com.mapr.fs.MapRFileSystem;
 import org.apache.commons.lang.builder.CompareToBuilder;
 import org.apache.commons.lang.builder.EqualsBuilder;
@@ -49,19 +49,19 @@ public class ProxyManager {
         if (upstreamCount < LIMIT_UPSTREAM_TABLES) {
             ProxyInfo proxyInfo = new ProxyInfo();
             proxyInfo.originalTablePath = originalPath.toUri().toString();
-            proxyInfo.originalFid = SandboxUtils.getFidFromPath(fs, proxyInfo.originalTablePath);
+            proxyInfo.originalFid = SandboxAdminUtils.getFidFromPath(fs, proxyInfo.originalTablePath);
 
             String proxyTableName = String.format(PROXY_TABLENAME_F, proxyInfo.originalFid, proxies.size());
             Path proxyTable = new Path(originalPath.getParent(), proxyTableName);
             proxyInfo.proxyTablePath = proxyTable.toUri().toString();
 
             // create proxy table
-            SandboxUtils.createSimilarTable(cmdFactory, proxyInfo.proxyTablePath, proxyInfo.originalTablePath);
+            SandboxAdminUtils.createSimilarTable(cmdFactory, proxyInfo.proxyTablePath, proxyInfo.originalTablePath);
 
-            proxyInfo.proxyFid = SandboxUtils.getFidFromPath(fs, proxyInfo.proxyTablePath);
+            proxyInfo.proxyFid = SandboxAdminUtils.getFidFromPath(fs, proxyInfo.proxyTablePath);
 
             // setup replication to original
-            SandboxUtils.setupReplication(cmdFactory, proxyInfo.proxyTablePath, proxyInfo.originalTablePath, false);
+            SandboxAdminUtils.setupReplication(cmdFactory, proxyInfo.proxyTablePath, proxyInfo.originalTablePath, false);
 
             return proxyInfo;
         } else {
@@ -111,7 +111,7 @@ public class ProxyManager {
             DbUpstreamCommands listUpstreamCmd = (DbUpstreamCommands) cmdFactory.getCLI(listUpstreamInput);
             commandOutput = listUpstreamCmd.executeRealCommand();
         } catch (Exception e) {
-            SandboxUtils.printErrors(commandOutput);
+            SandboxAdminUtils.printErrors(commandOutput);
             throw new SandboxException(
                     String.format("Could not determine the list of upstream tables from %s", tablePath.toUri()), e);
         }
@@ -144,7 +144,7 @@ public class ProxyManager {
             sb.append(proxyInfo.proxyFid).append("\n");
         }
 
-        SandboxUtils.writeToDfsFile(fs, proxyListPath, sb.toString());
+        SandboxAdminUtils.writeToDfsFile(fs, proxyListPath, sb.toString());
     }
 
 
@@ -167,7 +167,7 @@ public class ProxyManager {
                 while ((line = br.readLine()) != null) {
                     ProxyInfo proxyInfo = new ProxyInfo();
                     proxyInfo.proxyFid = line;
-                    Path proxyPath = SandboxUtils.pathFromFid(fs, proxyInfo.proxyFid);
+                    Path proxyPath = SandboxAdminUtils.pathFromFid(fs, proxyInfo.proxyFid);
                     proxyInfo.proxyTablePath = proxyPath.toUri().toString();
                     proxyInfo.upstreamCount = calcUpstreamCount(cmdFactory, proxyPath);
 

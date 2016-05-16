@@ -7,7 +7,7 @@ import com.mapr.cli.DbCommands;
 import com.mapr.cli.DbReplicaCommands;
 import com.mapr.cli.DbUpstreamCommands;
 import com.mapr.cliframework.base.*;
-import com.mapr.db.sandbox.utils.SandboxUtils;
+import com.mapr.db.sandbox.utils.SandboxAdminUtils;
 import com.mapr.fs.MapRFileSystem;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
@@ -31,7 +31,7 @@ public class SandboxAdmin {
     CLICommandFactory cmdFactory = CLICommandFactory.getInstance();
 
     public void createSandbox(String sandboxTablePath, String originalTablePath) throws SandboxException, IOException {
-        String originalFid = SandboxUtils.getFidFromPath(fs, originalTablePath);
+        String originalFid = SandboxAdminUtils.getFidFromPath(fs, originalTablePath);
 
         createEmptySandboxTable(sandboxTablePath, originalTablePath);
 
@@ -50,7 +50,7 @@ public class SandboxAdmin {
      */
     @VisibleForTesting
     void setupProxy(String sandboxTablePath, String originalFid) throws IOException, SandboxException {
-        Path originalPath = SandboxUtils.pathFromFid(fs, originalFid);
+        Path originalPath = SandboxAdminUtils.pathFromFid(fs, originalFid);
 
         TreeSet<ProxyManager.ProxyInfo> proxies = pm.loadProxyInfo(cmdFactory, originalFid, originalPath);
 
@@ -63,7 +63,7 @@ public class SandboxAdmin {
         }
 
         // wire proxy
-        SandboxUtils.setupReplication(cmdFactory, sandboxTablePath, selectedProxy.proxyTablePath, true);
+        SandboxAdminUtils.setupReplication(cmdFactory, sandboxTablePath, selectedProxy.proxyTablePath, true);
     }
 
     /**
@@ -89,7 +89,7 @@ public class SandboxAdmin {
             DbCfCommands delMetadataCFCmd = (DbCfCommands) cmdFactory.getCLI(delMetadataCFInput);
             commandOutput = delMetadataCFCmd.executeRealCommand();
         } catch (Exception e) {
-            SandboxUtils.printErrors(commandOutput);
+            SandboxAdminUtils.printErrors(commandOutput);
             e.printStackTrace(); // TODO handle properly
         }
 
@@ -104,7 +104,7 @@ public class SandboxAdmin {
             DbReplicaCommands resumeReplicaCmd = (DbReplicaCommands) cmdFactory.getCLI(resumeReplicaInput);
             commandOutput = resumeReplicaCmd.executeRealCommand();
         } catch (Exception e) {
-            SandboxUtils.printErrors(commandOutput);
+            SandboxAdminUtils.printErrors(commandOutput);
             e.printStackTrace(); // TODO handle properly
         }
 
@@ -179,7 +179,7 @@ public class SandboxAdmin {
             DbUpstreamCommands removeUpstreamCmd = (DbUpstreamCommands) cmdFactory.getCLI(removeUpstreamInput);
             commandOutput = removeUpstreamCmd.executeRealCommand();
         } catch (Exception e) {
-            SandboxUtils.printErrors(commandOutput);
+            SandboxAdminUtils.printErrors(commandOutput);
             e.printStackTrace(); // TODO handle properly
         }
 
@@ -233,7 +233,7 @@ public class SandboxAdmin {
     void writeSandboxMetadataFile(String sandboxTablePath, String originalTablePath) {
         Path sandboxMetadataFilePath = metadataFilePathForSandboxTable(sandboxTablePath);
         // content contains path to the original table
-        SandboxUtils.writeToDfsFile(fs, sandboxMetadataFilePath, originalTablePath);
+        SandboxAdminUtils.writeToDfsFile(fs, sandboxMetadataFilePath, originalTablePath);
     }
 
 
@@ -251,10 +251,10 @@ public class SandboxAdmin {
                     sandboxTablePath), e);
         }
 
-        SandboxUtils.createSimilarTable(cmdFactory, sandboxTablePath, originalTablePath);
+        SandboxAdminUtils.createSimilarTable(cmdFactory, sandboxTablePath, originalTablePath);
 
         // create metadata CF
-        SandboxUtils.createTableCF(cmdFactory, sandboxTablePath, "_shadow");
+        SandboxAdminUtils.createTableCF(cmdFactory, sandboxTablePath, "_shadow");
     }
 
     public void deleteTable(String tablePath) {
@@ -282,7 +282,7 @@ public class SandboxAdmin {
     }
 
     public void info(String originalTablePath) throws IOException, SandboxException {
-        String originalFid = SandboxUtils.getFidFromPath(fs, originalTablePath);
+        String originalFid = SandboxAdminUtils.getFidFromPath(fs, originalTablePath);
         Map<String, Object> props = Maps.newHashMap();
         props.put("fid", originalFid);
         props.put("path", originalTablePath);
