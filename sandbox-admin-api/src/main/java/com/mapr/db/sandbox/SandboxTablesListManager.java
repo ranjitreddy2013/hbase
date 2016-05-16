@@ -1,47 +1,38 @@
 package com.mapr.db.sandbox;
 
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import com.mapr.fs.MapRFileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.log4j.Logger;
 
 import java.io.*;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 /**
- * - Manages the recent tables list of a user.
- * - Persists the list to /user/<user_name>/.recent_sandbox_tables file.
- * - Limits the number of entries in this file to {@link #MAX_RECENT_TABLES_LIST_SIZE}
- *
+ * Manages the tables list
  */
-public class RecentSandboxTablesListManager {
-    private static final Logger LOG = Logger.getLogger(RecentSandboxTablesListManager.class);
-    private static final int MAX_RECENT_TABLES_LIST_SIZE = 50;
-    private static final String RECENT_TABLES_FILE_NAME = ".recent_sandbox_tables";
+public class SandboxTablesListManager {
+    private static final Logger LOG = Logger.getLogger(SandboxTablesListManager.class);
+
+    private static SandboxTablesListManager GLOBAL_INSTANCE;
+    private static Map<String, SandboxTablesListManager> registry = Maps.newHashMap();
+
+    public static final String GLOBAL_SANDBOX_TABLES_LIST_PATH = "/.sandbox_tables";
+    public static final String ORIGINAL_SBOX_LIST_FILENAME_FORMAT = ".sandbox_list_%s"; // original fid
+
+    private final Path listFilePath;
     private final MapRFileSystem fs;
 
-    public RecentSandboxTablesListManager(MapRFileSystem fs) {
+    public SandboxTablesListManager(MapRFileSystem fs, Path listFilePath) {
         this.fs = fs;
+        this.listFilePath = listFilePath;
     }
 
     /**
-     * Check if iser has a home directory or not.
-     * @return
-     */
-    public boolean hasHomeDir() {
-        try {
-            return fs.exists(new Path(getHomeDir())) &&
-                    fs.isFile(new Path(getHomeDir()));
-        } catch (Exception e) {
-            LOG.error(e);
-        }
-        return false;
-    }
-
-    /**
-     * Adds {@param newTable} to the top of recent tables list.
-     * Keeps the list size to {@link #MAX_RECENT_TABLES_LIST_SIZE}
+     * Adds {@param newTable} to the top of tables list.
      *
      * @param newTable
      */
@@ -49,9 +40,6 @@ public class RecentSandboxTablesListManager {
         List<String> recentTables = getListFromFile();
         if (recentTables.indexOf(newTable) == -1) {
             recentTables.add(0, newTable);
-            while (recentTables.size() > MAX_RECENT_TABLES_LIST_SIZE) {
-                recentTables.remove(recentTables.size() - 1);
-            }
             this.writeListToFile(recentTables);
         }
     }
@@ -98,10 +86,9 @@ public class RecentSandboxTablesListManager {
     public List<String> getListFromFile() {
         List<String> tablePaths = Lists.newArrayList();
         try {
-            Path recentTablesFilePath = new Path(getPathForRecentTablesFile());
-            if (fs.isFile(recentTablesFilePath)) {
+            if (fs.isFile(listFilePath)) {
                 BufferedReader reader = new BufferedReader(new InputStreamReader(
-                        fs.open(new Path(getPathForRecentTablesFile()))));
+                        fs.open(listFilePath)));
                 String path;
                 while ((path = reader.readLine()) != null) {
                     tablePaths.add(path);
@@ -116,10 +103,8 @@ public class RecentSandboxTablesListManager {
 
     private void writeListToFile(List<String> recentTablesList) {
         try {
-            String filePath = getPathForRecentTablesFile();
-
             // First write to a temp file...
-            String tempFilePath = filePath + new Random().nextInt();
+            String tempFilePath = listFilePath.toString() + new Random().nextInt();
             BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(
                     fs.create(new Path(tempFilePath), true).getWrappedStream()));
             for (String tablePath : recentTablesList) {
@@ -129,17 +114,27 @@ public class RecentSandboxTablesListManager {
             writer.close();
 
             // ...then do a rename
-            fs.rename(new Path(tempFilePath), new Path(filePath));
+            fs.rename(new Path(tempFilePath), listFilePath);
         } catch (Exception e) {
             LOG.error(e);
         }
     }
 
-    private String getPathForRecentTablesFile() {
-        return getHomeDir() + "/" + RECENT_TABLES_FILE_NAME;
+    public static SandboxTablesListManager global(MapRFileSystem fs) {
+        if (GLOBAL_INSTANCE == null) {
+            GLOBAL_INSTANCE = new SandboxTablesListManager(fs, new Path(GLOBAL_SANDBOX_TABLES_LIST_PATH));
+        }
+
+        return GLOBAL_INSTANCE;
     }
 
-    private String getHomeDir() {
-        return "/user/mapr ";
+    public static SandboxTablesListManager forOriginalTable(MapRFileSystem fs, Path originalPath, String originalFid) {
+        if (!registry.containsKey(originalFid)) {
+            Path originalSboxListFilePath = new Path(originalPath.getParent(),
+                    String.format(ORIGINAL_SBOX_LIST_FILENAME_FORMAT, originalFid));
+            registry.put(originalFid, new SandboxTablesListManager(fs, originalSboxListFilePath));
+        }
+
+        return registry.get(originalFid);
     }
 }

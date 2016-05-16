@@ -6,6 +6,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.commons.math3.util.Pair;
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CellUtil;
 import org.apache.hadoop.hbase.KeyValue;
@@ -102,25 +103,11 @@ public class SandboxHTable {
             if (Bytes.compareTo(cell.getFamilyArray(), cell.getFamilyOffset(), cell.getFamilyLength(),
                     DEFAULT_META_CF, 0, DEFAULT_META_CF.length) == 0) {
 
-                final byte[] annotatedColumn = CellUtil.cloneQualifier(cell);
-                String annotatedColumnStr = Bytes.toStringBinary(annotatedColumn);
-                final String separator = Bytes.toStringBinary(SandboxTableUtils.FAMILY_QUALIFIER_SEPARATOR);
+                Pair<byte[], byte[]> cellColumn = SandboxTableUtils.getCellFromMarkedForDeletionCell(cell);
 
-                int sepIndex = annotatedColumnStr.indexOf(separator);
-
-                if (sepIndex == -1) {
-                    continue; // bad representation? TODO log
-                }
-
-                try {
-                    byte[] family = Arrays.copyOfRange(annotatedColumn, 0, sepIndex);
-                    byte[] qualif = Arrays.copyOfRange(annotatedColumn, sepIndex + separator.length(), annotatedColumn.length);
-
-                    Cell deletedCell = new KeyValue(row, family, qualif);
+                if (cellColumn != null) {
+                    Cell deletedCell = new KeyValue(row, cellColumn.getFirst(), cellColumn.getSecond());
                     markedForDeletion.add(deletedCell);
-                } catch (ArrayIndexOutOfBoundsException ex) {
-                    // doesn't matter... it's a parsing error on the metadata notation
-                    // TODO log
                 }
             } else {
                 // if not, cell is extending / overriding current original row's value

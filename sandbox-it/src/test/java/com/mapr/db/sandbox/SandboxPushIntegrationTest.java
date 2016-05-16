@@ -150,31 +150,26 @@ public class SandboxPushIntegrationTest extends BaseSandboxIntegrationTest {
         setCellValue(hTableOriginal, newRowId, CF2, COL1, "initial val");
 
         // create sandbox
-        String sandboxPath2 = String.format("%s_sand2", originalTablePath);
-        sandboxAdmin.createSandbox(sandboxPath2, originalTablePath);
-
-        HTable hTableSandbox2 = new HTable(conf, sandboxPath2);
-
         ResultScanner origResults, sandResults;
         origResults = hTableOriginal.getScanner(scan);
-        sandResults = hTableSandbox2.getScanner(scan);
+        sandResults = hTableSandbox.getScanner(scan);
         assertEquals("table should have initial cell", 1L, countCells(origResults));
         assertEquals("table should have initial cell", 1L, countCells(sandResults));
 
 
-        setCellValue(hTableSandbox2, newRowId, CF1, COL1, "v4");
-        sandResults = hTableSandbox2.getScanner(scan);
+        setCellValue(hTableSandbox, newRowId, CF1, COL1, "v4");
+        sandResults = hTableSandbox.getScanner(scan);
         assertEquals("table should have initial cell + added one", 2L, countCells(sandResults));
 
-        sandboxAdmin.pushSandbox(sandboxPath2, true, false);
+        sandboxAdmin.pushSandbox(sandboxTablePath, true, false);
 
         Pair<String, Path> volumeInfo = SandboxAdminUtils.getVolumeInfoForPath(restClient, new Path(originalTablePath));
         String volumeName = volumeInfo.getFirst();
         String volumeMountPath = volumeInfo.getSecond().toString();
         String origTableRelativeVolumePath = originalTablePath.substring(volumeMountPath.length());
 
-        String sandbox2Fid = SandboxTableUtils.getFidFromPath(fs, sandboxPath2);
-        String snapshotName = String.format(SandboxAdmin.SANDBOX_PUSH_SNAPSHOT_FORMAT, sandbox2Fid);
+        String sandboxFid = SandboxTableUtils.getFidFromPath(fs, sandboxTablePath);
+        String snapshotName = String.format(SandboxAdmin.SANDBOX_PUSH_SNAPSHOT_FORMAT, sandboxFid);
 
         Path snapshotPath = new Path(String.format("%s/.snapshot/%s/%s",
                 volumeMountPath, snapshotName, origTableRelativeVolumePath));
@@ -224,7 +219,5 @@ public class SandboxPushIntegrationTest extends BaseSandboxIntegrationTest {
         assertEquals("table should have both 2 cells", 2L, countCells(sandResults));
         assertEquals("sandbox version should be the final one", "ts1",
                 getCellValue(hTableOriginal, newRowId, CF1, COL1));
-
-
     }
 }

@@ -25,8 +25,7 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 
 public class MapRRestClient {
-    private final String username;
-    private final String password;
+    final String username;
     private final String baseUrl;
 
 
@@ -36,7 +35,6 @@ public class MapRRestClient {
         // TODO make sure we handle multiple endpoints
         this.baseUrl = String.format("https://%s/rest", hostnames[0]);
         this.username = username;
-        this.password = password;
 
         // TODO convert to singleton?
         CredentialsProvider provider = new BasicCredentialsProvider();
@@ -68,7 +66,7 @@ public class MapRRestClient {
         try {
             response = client.execute(new HttpGet(baseUrl));
         } catch (IOException e) {
-            throw new SandboxException("Could not test credentials", e);
+            throw new SandboxException(String.format("Could not test credentials against url = %s", baseUrl), e);
         }
 
         int statusCode = response.getStatusLine().getStatusCode();
@@ -145,5 +143,9 @@ public class MapRRestClient {
             return null;
         }
         return s.split(" *, *");
+    }
+
+    public String getUsername() {
+        return username;
     }
 }

@@ -4,11 +4,14 @@ import com.google.common.collect.Maps;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
 import com.mapr.fs.MapRFileSystem;
+import org.apache.commons.math3.util.Pair;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CellUtil;
+import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.client.mapr.AbstractHTable;
+import org.apache.hadoop.hbase.util.Bytes;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -67,6 +70,7 @@ public class SandboxTableUtils {
             try {
                 BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(metaFilePath)));
                 info.put(SandboxTable.InfoType.SANDBOX_FID, getFidFromPath(fs, sandboxTablePath));
+                info.put(SandboxTable.InfoType.METAFILE_PATH, metaFilePath.toString());
                 info.put(SandboxTable.InfoType.ORIGINAL_FID, br.readLine());
                 info.put(SandboxTable.InfoType.SANDBOX_STATE, br.readLine());
                 return info;
@@ -210,6 +214,29 @@ public class SandboxTableUtils {
 
     public static Path lockFilePath(MapRFileSystem fs, String originalFid, Path originalPath) {
         return new Path(originalPath.getParent(), String.format(".pushlock_%s", originalFid));
+    }
+
+    public static Pair<byte[], byte[]> getCellFromMarkedForDeletionCell(Cell cell) {
+        final byte[] annotatedColumn = CellUtil.cloneQualifier(cell);
+        String annotatedColumnStr = Bytes.toStringBinary(annotatedColumn);
+        final String separator = Bytes.toStringBinary(SandboxTableUtils.FAMILY_QUALIFIER_SEPARATOR);
+
+        int sepIndex = annotatedColumnStr.indexOf(separator);
+
+        if (sepIndex == -1) {
+            return null; // parsing error
+        }
+
+        try {
+            byte[] family = Arrays.copyOfRange(annotatedColumn, 0, sepIndex);
+            byte[] qualif = Arrays.copyOfRange(annotatedColumn, sepIndex + separator.length(), annotatedColumn.length);
+            return new Pair<byte[], byte[]>(family, qualif);
+        } catch (ArrayIndexOutOfBoundsException ex) {
+            // doesn't matter... it's a parsing error on the metadata notation
+            // TODO log
+        }
+
+        return null;
     }
 
     public static byte[] generateTransactionId(Mutation mutation) {

@@ -24,7 +24,19 @@ public class SandboxTool {
     static Options createOpts, pushOpts, listOpts, deleteOpts;
     static Map<String, Options> cmdOperationOpts = Maps.newHashMap();
     static {
+        final Option usernameOpt = OptionBuilder.withArgName("username")
+                .hasArg()
+                .withDescription("username (default: current username)")
+                .create("user");
+
+        final Option passwordOpt = OptionBuilder.withArgName("password")
+                .hasArg()
+                .withDescription("user password (default: value from hidden prompt)")
+                .create("pw");
+
         createOpts = new Options();
+        createOpts.addOption(usernameOpt);
+        createOpts.addOption(passwordOpt);
         createOpts.addOption(OptionBuilder.withArgName("original table")
                 .hasArg()
                 .withDescription("original table path")
@@ -45,6 +57,8 @@ public class SandboxTool {
         cmdOperationOpts.put(OP_LIST, listOpts);
 
         pushOpts = new Options();
+        pushOpts.addOption(usernameOpt);
+        pushOpts.addOption(passwordOpt);
         pushOpts.addOption(OptionBuilder.withArgName("sandbox table")
                 .hasArg()
                 .withDescription("sandbox table path to push")
@@ -56,7 +70,7 @@ public class SandboxTool {
                         String.format("if true, it takes a snapshot to original table's volume before pushing sandbox (default: %s)", DEFAULT_SNAPSHOT_BEFORE_PUSH)
                 )
                 .create("snapshot"));
-        pushOpts.addOption(OptionBuilder
+        pushOpts.addOption(OptionBuilder.withArgName("<true|false>")
                 .hasArg() // forces the true or false
                 // TODO improve the description : >
                 .withDescription(
@@ -66,6 +80,8 @@ public class SandboxTool {
         cmdOperationOpts.put(OP_PUSH, pushOpts);
 
         deleteOpts = new Options();
+        deleteOpts.addOption(usernameOpt);
+        deleteOpts.addOption(passwordOpt);
         deleteOpts.addOption(OptionBuilder.withArgName("sandbox table")
                 .hasArg()
                 .withDescription("sandbox table path to delete")
@@ -99,10 +115,14 @@ public class SandboxTool {
         }
 
         try {
-            final UserGroupInformation currentUser = UserGroupInformation.getCurrentUser();
-            final SandboxAdmin sandboxAdmin = requiresPassword(operation) ?
-                    new SandboxAdmin(new Configuration(), currentUser.getUserName(), promptPassword()) :
-                    new SandboxAdmin(new Configuration(), null);
+            SandboxAdmin sandboxAdmin;
+            if (requiresPassword(operation)) {
+                final String username = cmd.hasOption("user") ? cmd.getOptionValue("user") : UserGroupInformation.getCurrentUser().getUserName();
+                final String password = cmd.hasOption("pw") ? cmd.getOptionValue("pw") : promptPassword();
+                sandboxAdmin = new SandboxAdmin(new Configuration(), username, password);
+            } else {
+                sandboxAdmin = new SandboxAdmin(new Configuration(), null);
+            }
 
             if (operation.equals(OP_CREATE)) {
                 sandboxAdmin.createSandbox(cmd.getOptionValue("path"),
@@ -120,21 +140,18 @@ public class SandboxTool {
                         forcePush = Boolean.valueOf(cmd.getOptionValue("force"));
                     }
 
-                    sandboxAdmin.pushSandbox(cmd.getOptionValue("path"), snapshot, forcePush);
+                    sandboxAdmin.pushSandbox(cmd.getOptionValue("path"), snapshot, forcePush, true);
                 } else if (operation.equals(OP_LIST)) {
                     String original = cmd.getOptionValue("original");
 
-                    if (original != null) {
-                        sandboxAdmin.info(original);
-                    } else {
-                        List<String> recentSandboxes = sandboxAdmin.listRecent();
-                        StringBuffer sb = new StringBuffer();
-                        // TODO paged
-                        for (String recentSandbox : recentSandboxes) {
-                            sb.append(recentSandbox).append("\n");
-                        }
-                        System.out.println(sb.toString());
+                    List<String> recentSandboxes = sandboxAdmin.listRecent(original);
+                    StringBuffer sb = new StringBuffer();
+
+                    // TODO paged
+                    for (String recentSandbox : recentSandboxes) {
+                        sb.append(recentSandbox).append("\n");
                     }
+                    System.out.println(sb.toString());
                 } else if (operation.equals(OP_DELETE)) {
                     sandboxAdmin.deleteSandbox(cmd.getOptionValue("path"));
                 }

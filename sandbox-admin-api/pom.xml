@@ -83,6 +83,83 @@
     </dependency>
   </dependencies>
 
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>rpm-maven-plugin</artifactId>
+        <version>2.1.4</version>
+        <executions>
+          <execution>
+            <id>attached-rpm</id>
+            <goals>
+              <goal>attached-rpm</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <name>${project.artifactId}</name>
+          <group>MapR-DB/sandbox</group>
+          <packager>MapR</packager>
+          <mappings>
+            <mapping>
+              <directory>${install.prefix}/lib</directory>
+              <filemode>750</filemode>
+              <username>mapr</username>
+              <groupname>mapr</groupname>
+              <dependency>
+                <includes>
+                  <include>org.apache.httpcomponents:httpclient:4.5.1</include>
+                  <include>org.apache.httpcomponents:httpcore:4.4.4</include>
+                </includes>
+              </dependency>
+              <sources>
+                <source>
+                  <location>target/${project.artifactId}-${project.version}.jar</location>
+                </source>
+                <source>
+                  <location>../hbase-client/target/hbase-client-${project.version}.jar</location>
+                </source>
+                <softlinkSource>
+                  <location>${mapr.lib.dir}/maprcli-5.0.0-mapr.jar</location>
+                </softlinkSource>
+                <softlinkSource>
+                  <location>${mapr.lib.dir}/maprfs-5.0.0-mapr.jar</location>
+                </softlinkSource>
+              </sources>
+            </mapping>
+            <mapping>
+              <directory>${install.prefix}/bin</directory>
+              <filemode>750</filemode>
+              <username>mapr</username>
+              <groupname>mapr</groupname>
+              <sources>
+                <source>
+                  <location>bin</location>
+                </source>
+              </sources>
+            </mapping>
+            <mapping>
+              <directory>${install.prefix}/conf</directory>
+              <configuration>true</configuration>
+              <filemode>755</filemode>
+              <username>mapr</username>
+              <groupname>mapr</groupname>
+              <sources>
+                <source>
+                  <location>src/main/resources</location>
+                </source>
+              </sources>
+            </mapping>
+          </mappings>
+          <requires>
+            <require>mapr-patch >= 5.0.0.32987.GA-35615</require>
+          </requires>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
   <profiles>
     <profile>
       <id>philips-sandbox</id>
@@ -90,6 +167,8 @@
         <activeByDefault>true</activeByDefault>
       </activation>
       <properties>
+        <install.prefix>/opt/mapr/sandbox</install.prefix>
+        <mapr.lib.dir>/opt/mapr/lib</mapr.lib.dir>
         <surefire.skipFirstPart>false</surefire.skipFirstPart>
       </properties>
     </profile>

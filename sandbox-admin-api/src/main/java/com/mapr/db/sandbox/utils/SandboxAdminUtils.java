@@ -251,12 +251,31 @@ public class SandboxAdminUtils {
             if (data != null) {
                 return data.getJSONObject(0).getInt("bytesPending");
             }
-
-            throw new SandboxException("Error getting replication bytes pending for table " + tablePath, null);
         } catch (SandboxException e) {
             throw new SandboxException("Error getting replication bytes pending for table " + tablePath, e);
         } catch (JSONException e) {
             throw new SandboxException("Error parsing replication bytes pending for table " + tablePath, e);
         }
+
+        throw new SandboxException("Error getting replication bytes pending for table " + tablePath, null);
+    }
+
+    public static boolean isServiceRunningOnCluster(MapRRestClient restClient, String serviceName) throws SandboxException {
+        final String urlPath =  String.format("/node/list?filter=[service==%s]&columns=hostname", serviceName);
+
+        try {
+            JSONObject result = restClient.callCommand(urlPath, true);
+            JSONArray data = result.has("data") ? result.getJSONArray("data") : null;
+
+            if (data != null) {
+                return data.length() > 0;
+            }
+        } catch (SandboxException e) {
+            throw new SandboxException("Error retrieving running service state in the cluster: service = " + serviceName, e);
+        } catch (JSONException e) {
+            throw new SandboxException("Error parsing running service state in the cluster: service = " + serviceName, e);
+        }
+
+        throw new SandboxException("Error retrieving running service state in the cluster: service = " + serviceName, null);
     }
 }

@@ -51,7 +51,7 @@ public class SandboxAdmin {
 
     MapRFileSystem fs;
     MapRRestClient restClient;
-    RecentSandboxTablesListManager recentSandboxManager;
+    SandboxTablesListManager globalSandboxListManager;
 
     public SandboxAdmin(Configuration configuration) throws SandboxException {
         this(configuration,
@@ -69,7 +69,7 @@ public class SandboxAdmin {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        recentSandboxManager = new RecentSandboxTablesListManager(fs);
+        globalSandboxListManager = SandboxTablesListManager.global(fs);
         this.restClient = restClient;
 
         if (restClient != null) {
@@ -86,16 +86,31 @@ public class SandboxAdmin {
         // creates paused replication from sand to original; original doesn't incl sand in the upstream
         SandboxAdminUtils.addTableReplica(restClient, sandboxTablePath, originalTablePath, true);
         writeSandboxMetadataFile(sandboxTablePath, originalFid, SandboxTable.SandboxState.ENABLED);
-        recentSandboxManager.moveToTop(sandboxTablePath);
+
+        // update lists
+        SandboxTablesListManager origTableSandboxListManager = SandboxTablesListManager
+                .forOriginalTable(fs, new Path(originalTablePath), originalFid);
+        globalSandboxListManager.moveToTop(sandboxTablePath);
+        origTableSandboxListManager.moveToTop(sandboxTablePath);
+    }
+
+
+    public void pushSandbox(String sandboxTablePath, boolean snapshot, boolean forcePush) throws IOException, SandboxException {
+        pushSandbox(sandboxTablePath, snapshot, forcePush, false);
     }
 
     /**
      *  @param sandboxTablePath
      * @param snapshot
      * @param forcePush
+     * @param deleteSandboxOnFinish
      */
-    public void pushSandbox(String sandboxTablePath, boolean snapshot, boolean forcePush) throws IOException, SandboxException {
+    public void pushSandbox(String sandboxTablePath, boolean snapshot, boolean forcePush, boolean deleteSandboxOnFinish) throws IOException, SandboxException {
         final String LOG_MSG_PREFIX = "Sandbox " + sandboxTablePath + " > ";
+
+        if (!SandboxAdminUtils.isServiceRunningOnCluster(restClient, "gateway")) {
+            throw new SandboxException("Gateway service is required for sandbox table push.", null);
+        }
 
         // read sandbox metadata
         EnumMap<SandboxTable.InfoType, String> info = SandboxTableUtils.readSandboxInfo(fs, sandboxTablePath);
@@ -111,7 +126,8 @@ public class SandboxAdmin {
             if (forcePush) {
                 boolean forcePushSuccess = false;
                 try {
-                    forcePushSuccess = TouchSandboxChangesJob.touchSandboxChanges(sandboxTablePath, true);
+                    forcePushSuccess = TouchSandboxChangesJob.touchSandboxChanges(sandboxTablePath,
+                            this.restClient.getUsername(), true);
                 } catch (Exception e) {
                     throw new SandboxException(LOG_MSG_PREFIX + "Error updating sandbox changes to latest timestamp", e);
                 }
@@ -119,10 +135,8 @@ public class SandboxAdmin {
                 System.out.println(forcePushSuccess);
             }
 
-
             // prevent any kind of editing to the sandbox table // TODO work in progress
-//        SandboxAdminUtils.lockEditsForTable(sandboxTablePath);
-
+//            SandboxAdminUtils.lockEditsForTable(sandboxTablePath);
 
             // disable sandbox table
             writeSandboxMetadataFile(sandboxTablePath, originalFid, SandboxTable.SandboxState.SNAPSHOT_CREATE);
@@ -182,6 +196,12 @@ public class SandboxAdmin {
             // remove sandbox as upstream of original
             SandboxAdminUtils.removeUpstreamTable(restClient, originalTablePath, sandboxTablePath);
             LOG.info(LOG_MSG_PREFIX + "Sandbox table removed from original upstream list");
+
+            if (deleteSandboxOnFinish) {
+                LOG.info(LOG_MSG_PREFIX + "Deleting sandbox table...");
+                deleteSandbox(sandboxTablePath);
+                LOG.info(LOG_MSG_PREFIX + "Sandbox table deleted.");
+            }
         } finally {
             // remove lock file
             try {
@@ -209,13 +229,23 @@ public class SandboxAdmin {
 
 
     public void deleteSandbox(String sandboxTablePath) throws IOException, SandboxException {
+        EnumMap<SandboxTable.InfoType, String> info = SandboxTableUtils.readSandboxInfo(fs, sandboxTablePath);
+
         // delete metadata file FIRST
-        Path metadataFilePath = SandboxTableUtils.metafilePath(fs, sandboxTablePath);
+        Path metadataFilePath = new Path(info.get(SandboxTable.InfoType.METAFILE_PATH));
         fs.delete(metadataFilePath, false);
 
         // deletes sandbox
         SandboxAdminUtils.deleteTable(restClient, sandboxTablePath);
-        recentSandboxManager.deleteIfNotExist(sandboxTablePath, fs);
+
+        // update lists
+        String originalFid = info.get(SandboxTable.InfoType.ORIGINAL_FID);
+        Path originalPath = SandboxTableUtils.pathFromFid(fs, originalFid);
+
+        SandboxTablesListManager origTableSandboxListManager = SandboxTablesListManager
+                .forOriginalTable(fs, originalPath, originalFid);
+        globalSandboxListManager.delete(sandboxTablePath);
+        origTableSandboxListManager.delete(sandboxTablePath);
     }
 
     @VisibleForTesting
@@ -226,11 +256,9 @@ public class SandboxAdmin {
                 .append(originalFid).append("\n")
                 .append(sandboxState);
 
-
         // content contains FID to original table
         SandboxAdminUtils.writeToDfsFile(fs, sandboxMetadataFilePath, sb.toString());
     }
-
 
     @VisibleForTesting
     void createEmptySandboxTable(String sandboxTablePath, String originalTablePath) throws SandboxException {
@@ -268,8 +296,16 @@ public class SandboxAdmin {
         System.out.println(om.writeValueAsString(props));
     }
 
-    public List<String> listRecent() {
-        return recentSandboxManager.getListFromFile();
+    public List<String> listRecent(String originalTablePath) throws IOException {
+        if (originalTablePath == null) {
+            return globalSandboxListManager.getListFromFile();
+        }
+
+        String originalFid = SandboxTableUtils.getFidFromPath(fs, originalTablePath);
+        SandboxTablesListManager originalSandboxListManager = SandboxTablesListManager
+                .forOriginalTable(fs, new Path(originalTablePath), originalFid);
+
+        return originalSandboxListManager.getListFromFile();
     }
 
 }
