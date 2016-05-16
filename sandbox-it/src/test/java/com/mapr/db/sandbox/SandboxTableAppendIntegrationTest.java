@@ -241,25 +241,28 @@ public class SandboxTableAppendIntegrationTest extends BaseSandboxIntegrationTes
 
     @Test
     public void testConcurrentAppend() throws IOException {
-        testConcurrentAppendForTable(hTableMimic, 0L);
-        testConcurrentAppendForTable(hTableSandbox, 0L);
+        testConcurrentAppendForTable(hTableMimic, "");
+        testConcurrentAppendForTable(hTableSandbox, "");
     }
 
     @Test
-    public void testConcurrentIncrementOnFilledOriginal() throws IOException {
+    public void testConcurrentAppendOnFilledOriginal() throws IOException {
         // fill original
-        long initialLength = 4L;
-        setCellValue(hTableMimic, newRowId, CF1, colA, "test");
-        setCellValue(hTableMimic, newRowId, CF1, colB, "t3st");
-        setCellValue(hTableOriginal, newRowId, CF1, colA, "test");
-        setCellValue(hTableOriginal, newRowId, CF1, colB, "t3st");
+        final String initialValueA = "test";
+        final String initialValueB = "t3st";
+        setCellValue(hTableMimic, newRowId, CF1, colA, initialValueA);
+        setCellValue(hTableMimic, newRowId, CF1, colB, initialValueB);
+        setCellValue(hTableOriginal, newRowId, CF1, colA, initialValueA);
+        setCellValue(hTableOriginal, newRowId, CF1, colB, initialValueB);
 
-        testConcurrentAppendForTable(hTableMimic, initialLength);
-        testConcurrentAppendForTable(hTableSandbox, initialLength);
+        testConcurrentAppendForTable(hTableMimic, "t.st");
+        testConcurrentAppendForTable(hTableSandbox, "t.st");
     }
 
-    private void testConcurrentAppendForTable(HTable hTable, long initialValue) throws IOException {
+    private void testConcurrentAppendForTable(HTable hTable, String initialValue) throws IOException {
         final int SIMULATENOUS_TASKS = 6;
+
+        long initialLength = initialValue.length();
 
         // invoke simultaneous push
         List<Runnable> tasksList = new ArrayList<Runnable>(SIMULATENOUS_TASKS);
@@ -280,14 +283,13 @@ public class SandboxTableAppendIntegrationTest extends BaseSandboxIntegrationTes
             e.printStackTrace();
         }
 
-
         String valueColA = getCellValue(hTable, newRowId, CF1, colA);
         String valueColB = getCellValue(hTable, newRowId, CF1, colB);
 
-        assertTrue("colA only contains 'a'", valueColA.matches("a+"));
-        assertTrue("colB only contains 'B'", valueColB.matches("B+"));
-        assertEquals(lengthColA.get()+initialValue, valueColA.length());
-        assertEquals(lengthColB.get()+initialValue, valueColB.length());
+        assertTrue("colA only contains 'a' after initial content", valueColA.matches(initialValue + "a+"));
+        assertTrue("colB only contains 'B' after initial content", valueColB.matches(initialValue + "B+"));
+        assertEquals(lengthColA.get()+initialLength, valueColA.length());
+        assertEquals(lengthColB.get()+initialLength, valueColB.length());
         assertEquals(0, errorCount.get());
     }
 

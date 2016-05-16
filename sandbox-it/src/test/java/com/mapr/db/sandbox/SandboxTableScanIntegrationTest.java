@@ -11,7 +11,6 @@ import static com.mapr.db.sandbox.SandboxTestUtils.*;
 import static org.junit.Assert.assertEquals;
 
 public class SandboxTableScanIntegrationTest extends BaseSandboxIntegrationTest {
-    Scan scan = new Scan();
     Scan scanCF1 = new Scan();
     Scan scanCF2 = new Scan();
 

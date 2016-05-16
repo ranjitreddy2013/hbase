@@ -3,8 +3,6 @@ package com.mapr.db.sandbox;
 import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.ResultScanner;
-import org.apache.hadoop.hbase.client.Scan;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -21,8 +19,6 @@ public class SandboxTableCheckAndDeleteIntegrationTest extends BaseSandboxIntegr
         delete2 = new Delete(existingRowId);
         delete2.deleteColumns(CF2, COL2);
     }
-
-    Scan scan = new Scan();
 
     @Test
     public void testCheckAndDeleteOnEmptyOriginal() throws IOException, SandboxException {
@@ -104,8 +100,6 @@ public class SandboxTableCheckAndDeleteIntegrationTest extends BaseSandboxIntegr
         assertEquals("value should remain untouched", "deleteMe", getCellValue(hTable, newRowId, CF1, COL2));
     }
 
-
-    @Ignore
     @Test
     public void testCheckAndDeleteOnFilledOriginal() throws IOException, SandboxException {
         // CASE original filled, sandbox empty

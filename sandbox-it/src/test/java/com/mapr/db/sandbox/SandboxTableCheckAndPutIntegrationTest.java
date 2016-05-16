@@ -1,9 +1,10 @@
 package com.mapr.db.sandbox;
 
+
+import org.apache.hadoop.hbase.DoNotRetryIOException;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.ResultScanner;
-import org.apache.hadoop.hbase.client.Scan;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -21,8 +22,6 @@ public class SandboxTableCheckAndPutIntegrationTest extends BaseSandboxIntegrati
         put2 = new Put(existingRowId);
         put2.add(CF1, COL2, "otherString".getBytes());
     }
-
-    Scan scan = new Scan();
 
     @Test
     public void testCheckAndPutOnEmptyOriginal() throws IOException, SandboxException {
@@ -163,8 +162,8 @@ public class SandboxTableCheckAndPutIntegrationTest extends BaseSandboxIntegrati
         delCell(hTableSandbox, existingRowId, CF1, COL1);
         delCell(hTableMimic, existingRowId, CF1, COL1);
 
-        verifyFinalStateCheckAndPutOnFilledOriginal(hTableSandbox);
         verifyFinalStateCheckAndPutOnFilledOriginal(hTableMimic);
+        verifyFinalStateCheckAndPutOnFilledOriginal(hTableSandbox);
 
         pushSandbox();
 
@@ -179,4 +178,34 @@ public class SandboxTableCheckAndPutIntegrationTest extends BaseSandboxIntegrati
     }
 
     // TODO add test where original is filled, and matching cell is updated in original before push (should mantain) the new value
+    // TODO depends on Force push
+
+    @Test
+    public void testCheckAndPutOnNullColumns() throws IOException, SandboxException {
+        testCheckAndPutOnNullColumnsForTable(hTableMimic);
+        testCheckAndPutOnNullColumnsForTable(hTableSandbox);
+    }
+
+    public void testCheckAndPutOnNullColumnsForTable(HTable hTable) throws IOException, SandboxException {
+        Put put = new Put(newRowId);
+        put.add(CF1, COL2, "v1".getBytes());
+
+        assertTrue(hTable.checkAndPut(newRowId, CF1, COL1, null, put));
+        assertEquals("v1", getCellValue(hTable, newRowId, CF1, COL2));
+
+        // CASE: verify that null match doesn't work for filled columns
+        setCellValue(hTable, existingRowId, CF1, COL1, "someContent");
+
+        // verify it's all in good state to start the test
+        assertEquals(null, getCellValue(hTable, existingRowId, CF1, COL2));
+
+        boolean opSucceeded = true;
+        try {
+            opSucceeded = hTable.checkAndPut(existingRowId, CF1, COL1, null, put);
+        } catch (DoNotRetryIOException ex) {
+            opSucceeded = false;
+        }
+        assertFalse("op shouldn't succeed", opSucceeded);
+        assertEquals(null, getCellValue(hTable, existingRowId, CF1, COL2));
+    }
 }

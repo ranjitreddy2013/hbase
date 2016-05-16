@@ -11,8 +11,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.TableName;
- import org.apache.hadoop.hbase.client.HBaseAdmin;
-import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.*;
 import org.junit.After;
 import org.junit.Before;
 
@@ -29,9 +28,10 @@ public abstract class BaseSandboxIntegrationTest {
 	static final String COL2_NAME = "col_y";
 	static final byte[] COL1 = COL1_NAME.getBytes();
 	static final byte[] COL2 = COL2_NAME.getBytes();
+	
+    Scan scan = new Scan();
 
     // TODO load from settings as env specific
-	final static String TABLE_PREFIX = "changethis";//TODO delete this
 	final static String TEST_WORKING_DIR_PREFIX = "/philips_sandbox_it_tmp/";
 
     protected static Configuration conf;

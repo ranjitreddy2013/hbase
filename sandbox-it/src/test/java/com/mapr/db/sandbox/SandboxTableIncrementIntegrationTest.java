@@ -3,7 +3,6 @@ package com.mapr.db.sandbox;
 import org.apache.hadoop.hbase.CellUtil;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -12,13 +11,10 @@ import java.util.List;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static com.mapr.db.sandbox.SandboxTable.DEFAULT_META_CF;
 import static com.mapr.db.sandbox.SandboxTestUtils.*;
 import static org.junit.Assert.assertEquals;
 
 public class SandboxTableIncrementIntegrationTest extends BaseSandboxIntegrationTest {
-    Scan scan = new Scan();
-
     @Test
     public void testIncrementOnEmptyOriginal() throws IOException, SandboxException {
         // CASE original empty, sandbox empty
@@ -79,8 +75,6 @@ public class SandboxTableIncrementIntegrationTest extends BaseSandboxIntegration
         assertEquals(1, getCellLongValue(hTable, newRowId, CF1, COL1));
     }
 
-
-
     @Test
     public void testAllOrNothingIncrement() throws IOException {
         testAllOrNothingIncrementForTable(hTableMimic);
@@ -118,174 +112,6 @@ public class SandboxTableIncrementIntegrationTest extends BaseSandboxIntegration
         assertEquals(4, getCellLongValue(hTable, newRowId, CF2, COL2));
     }
 
-
-
-    @Ignore
-    @Test
-    public void testSandboxIncrementNotInProductionNotInSandbox() throws IOException {
-        // data not in production and not in sandbox
-        final byte[] rowId = Bytes.toBytes("row35");
-
-        // test incrementing the value of an already existing column
-        // TODO
-
-        // test incrementing the value of a new column
-        Increment increment2 = new Increment(rowId);
-        increment2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col101"), 1);
-        increment2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col102"), 1);
-        hTableSandbox.increment(increment2);
-
-        Get get2 = new Get(rowId);
-        get2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col101"));
-//        long prod = Bytes.toLong(hTableProduction.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col101")));
-        long sand = Bytes.toLong(hTableSandbox.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col101")));
-//        assertEquals("row is not in production. should return null.", prod, null);
-        assertEquals("row is not in sandbox. value should be initialized to 1", sand, 1L);
-
-        // test deletion marker in meta _shadow column family
-        Get get = new Get(Bytes.toBytes("row1"));
-        get.addFamily(DEFAULT_META_CF);
-        // TODO query the _shadow table for checking deletionMark
-        //resultSandbox = hTableSandbox.get(get);
-        //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
-        //assertEquals("value should be null for production", sand, null);
-        //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-        //assertFalse("deletionMark should be removed if present", hTableOriginal.exists(get));
-    }
-
-    @Ignore
-    @Test
-    // data not in production but in sandbox
-    public void testSandboxIncrementNotInProductionInSandbox() throws IOException {
-        // test incrementing the value of an already existing column
-        // TODO
-
-        // test incrementing the value of a new column
-        Increment increment2 = new Increment(Bytes.toBytes("row35"));
-        increment2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col101"), 1);
-        increment2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col102"), 1);
-        hTableSandbox.increment(increment2);
-        Get get2 = new Get(Bytes.toBytes("row35"));
-        get2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col101"));
-//        long prod = Bytes.toLong(hTableProduction.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col101")));
-        long sand = Bytes.toLong(hTableSandbox.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col101")));
-//        assertEquals("row is not in production. should return null.", prod, null);
-        assertEquals("row is in sandbox. new column. value should be initialized to 1", sand, 1L);
-
-        // test deletion marker in meta _shadow column family
-        Get get = new Get(Bytes.toBytes("row1"));
-        get.addFamily(DEFAULT_META_CF);
-        // TODO query the _shadow table for checking deletionMark
-        //resultSandbox = hTableSandbox.get(get);
-        //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
-        //assertEquals("value should be null for production", sand, null);
-        //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-        //assertFalse("deletionMark should be removed if present", hTableOriginal.exists(get));
-    }
-
-    @Ignore
-    @Test
-    // data in production but not in sandbox
-    public void testSandboxIncrementInProductionNotInSandbox() throws IOException {
-        // test incrementing the value of an already existing column
-        // TODO
-
-        // test incrementing the value of a new column
-        Increment increment2 = new Increment(Bytes.toBytes("row35"));
-        increment2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col101"), 1);
-        increment2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col102"), 1);
-        hTableSandbox.increment(increment2);
-        Get get2 = new Get(Bytes.toBytes("row35"));
-        get2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col101"));
-//        long prod = Bytes.toLong(hTableProduction.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col101")));
-        long sand = Bytes.toLong(hTableSandbox.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col101")));
-//        assertEquals("row is in production, but a new column. should return null.", prod, null);
-        assertEquals("row not in sandbox. should be fetched from production and value initialized to 1", sand, 1L);
-
-        // test deletion marker in meta _shadow column family
-        Get get = new Get(Bytes.toBytes("row1"));
-        get.addFamily(DEFAULT_META_CF);
-        // TODO query the _shadow table for checking deletionMark
-        //resultSandbox = hTableSandbox.get(get);
-        //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
-        //assertEquals("value should be null for production", sand, null);
-        //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-        //assertFalse("deletionMark should be removed if present", hTableOriginal.exists(get));
-    }
-
-    @Ignore
-    @Test
-    // data in production and in sandbox
-    public void testSandboxIncrementInProductionInSandbox() throws IOException {
-        // test incrementing the value of an already existing column
-    /*long cnt1 = hTableSandbox.incrementColumnValue(Bytes.toBytes("row1"), Bytes.toBytes("cf1"), Bytes.toBytes("col1"), 1);
-    assertEquals("value should be incremented by 1 in sandbox", cnt1, 2L);
-    long cnt2 = hTableSandbox.incrementColumnValue(Bytes.toBytes("row1"), Bytes.toBytes("cf1"), Bytes.toBytes("col1"), 1);
-    assertEquals("value should be incremented by 1 more in sandbox", cnt2, 3L);
-    long cnt3 = hTableSandbox.incrementColumnValue(Bytes.toBytes("row1"), Bytes.toBytes("cf1"), Bytes.toBytes("col1"), -1);
-    assertEquals("value should be decremented by 1 in sandbox", cnt3, 2L);
-    long cnt4 = hTableSandbox.incrementColumnValue(Bytes.toBytes("row1"), Bytes.toBytes("cf1"), Bytes.toBytes("col1"), 100);
-    assertEquals("value should be incremented by 100 in sandbox", cnt4, 102L);
-    long cnt5 = hTableSandbox.incrementColumnValue(Bytes.toBytes("row1"), Bytes.toBytes("cf1"), Bytes.toBytes("col1"), -99);
-    assertEquals("value should be decremented by 99 in sandbox", cnt5, 3L);
-    long cnt6 = hTableSandbox.incrementColumnValue(Bytes.toBytes("row1"), Bytes.toBytes("cf1"), Bytes.toBytes("col1"), 0);
-    assertEquals("value should remain as is when decremented by 0 in sandbox", cnt6, 3L);
-
-
-    Get get1 = new Get(Bytes.toBytes("row1"));
-    get1.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col1"));
-    String prod = Bytes.toString(hTableOriginal.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-    String sand = Bytes.toString(hTableSandbox.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-    assertEquals("value in production should not be affected by any of the sandbox increments", prod, 1L);
-    assertEquals("value in sandbox after all increment operations", sand, 1L); */
-
-
-        // test incrementing the value of a new column
-        Increment increment2 = new Increment(Bytes.toBytes("row1"));
-        increment2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col101"), 1);
-        increment2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col102"), 1);
-        hTableSandbox.increment(increment2);
-        Get get2 = new Get(Bytes.toBytes("row1"));
-        get2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col101"));
-//        long prod = Bytes.toLong(hTableProduction.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col101")));
-        long sand = Bytes.toLong(hTableSandbox.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col101")));
-//        assertEquals("value not in production. should return null.", prod, null);
-        assertEquals("value should initialize to 1", sand, 1L);
-
-        //assertEquals("value should initialize to 1 in sandbox", cnt, 1L);
-
-    /*long cnt = hTableSandbox.incrementColumnValue(Bytes.toBytes("row1"), Bytes.toBytes("cf1"), Bytes.toBytes("col101"), 1);
-    assertEquals("value should initialize to 1 in sandbox", cnt, 1L);
-    long cnt1 = hTableSandbox.incrementColumnValue(Bytes.toBytes("row1"), Bytes.toBytes("cf1"), Bytes.toBytes("col101"), 1);
-    assertEquals("value should be incremented by 1 in sandbox", cnt1, 2L);
-    long cnt2 = hTableSandbox.incrementColumnValue(Bytes.toBytes("row1"), Bytes.toBytes("cf1"), Bytes.toBytes("col101"), 1);
-    assertEquals("value should be incremented by 1 more in sandbox", cnt2, 3L);
-    long cnt3 = hTableSandbox.incrementColumnValue(Bytes.toBytes("row1"), Bytes.toBytes("cf1"), Bytes.toBytes("col101"), -1);
-    assertEquals("value should be decremented by 1 in sandbox", cnt3, 2L);
-    long cnt4 = hTableSandbox.incrementColumnValue(Bytes.toBytes("row1"), Bytes.toBytes("cf1"), Bytes.toBytes("col101"), 100);
-    assertEquals("value should be incremented by 100 in sandbox", cnt4, 102L);
-    long cnt5 = hTableSandbox.incrementColumnValue(Bytes.toBytes("row1"), Bytes.toBytes("cf1"), Bytes.toBytes("col101"), -99);
-    assertEquals("value should be decremented by 99 in sandbox", cnt5, 3L);
-    long cnt6 = hTableSandbox.incrementColumnValue(Bytes.toBytes("row1"), Bytes.toBytes("cf1"), Bytes.toBytes("col101"), 0);
-    assertEquals("value should remain as is when decremented by 0 in sandbox", cnt6, 3L);*/
-/*
-    Get get2 = new Get(Bytes.toBytes("row1"));
-    get2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col101"));
-    String prod = Bytes.toString(hTableOriginal.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col101")));
-    String sand = Bytes.toString(hTableSandbox.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col101")));
-    assertEquals("value not in production. should return null.", prod, null);
-    assertEquals("value in sandbox after all increment operations", sand, 3L);
-*/
-        // test deletion marker in meta _shadow column family
-        Get get = new Get(Bytes.toBytes("row1"));
-        get.addFamily(DEFAULT_META_CF);
-        // TODO query the _shadow table for checking deletionMark
-        //resultSandbox = hTableSandbox.get(get);
-        //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
-        //assertEquals("value should be null for production", sand, null);
-        //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-        //assertFalse("deletionMark should be removed if present", hTableOriginal.exists(get)); */
-    }
 
 
 

@@ -11,10 +11,9 @@ import static com.mapr.db.sandbox.SandboxTestUtils.*;
 import static org.junit.Assert.assertEquals;
 
 public class SandboxTableDeleteIntegrationTest extends BaseSandboxIntegrationTest {
-    static Scan scan, scanCF;
+    static Scan scanCF;
 
     static {
-        scan = new Scan();
         scanCF = new Scan();
         scanCF.addFamily(CF1);
     }

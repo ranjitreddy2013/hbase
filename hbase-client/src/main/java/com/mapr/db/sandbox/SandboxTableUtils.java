@@ -211,6 +211,13 @@ public class SandboxTableUtils {
         return hashF.hashString(mutation.toString()).asBytes();
     }
 
+    public static byte[] generateTransactionId(final byte[] rowId, final byte[] family, final byte[] qualifier) {
+        StringBuffer sb = new StringBuffer(Arrays.toString(rowId)).append("\n")
+                .append(Arrays.toString(family)).append("\n")
+                .append(Arrays.toString(qualifier));
+        return hashF.hashString(sb.toString()).asBytes();
+    }
+
     public static Get enrichGet(Get get) {
         // add only if there is a specific set of columns, otherwise it will retrieve all
         if (get.hasFamilies()) {

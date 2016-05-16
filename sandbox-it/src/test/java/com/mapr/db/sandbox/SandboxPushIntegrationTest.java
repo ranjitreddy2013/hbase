@@ -3,7 +3,6 @@ package com.mapr.db.sandbox;
 import com.google.common.collect.Lists;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.ResultScanner;
-import org.apache.hadoop.hbase.client.Scan;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -15,8 +14,6 @@ import static com.mapr.db.sandbox.SandboxTestUtils.*;
 import static org.junit.Assert.assertEquals;
 
 public class SandboxPushIntegrationTest extends BaseSandboxIntegrationTest {
-    Scan scan = new Scan();
-
     @Test
     public void testSimulataneousPush() throws IOException, SandboxException {
         final int SIMULATENOUS_TASKS = 6;

@@ -3,7 +3,10 @@ package com.mapr.db.sandbox;
 import com.google.common.collect.Maps;
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CellUtil;
-import org.apache.hadoop.hbase.client.*;
+import org.apache.hadoop.hbase.client.Delete;
+import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import java.io.IOException;
@@ -11,28 +14,30 @@ import java.nio.ByteBuffer;
 import java.util.Map;
 
 import static com.mapr.db.sandbox.SandboxTable.DEFAULT_META_CF;
-import static com.mapr.db.sandbox.SandboxTableUtils.*;
+import static com.mapr.db.sandbox.SandboxTableUtils.buildAnnotatedColumn;
+import static com.mapr.db.sandbox.SandboxTableUtils.enrichGet;
 
-public abstract class AtomicSandboxOperation {
+public abstract class AtomicSandboxOp {
     static final int MAX_TRIES = 300;
     final byte[] rowId;
     final SandboxTable sandboxTable;
-    final Mutation mutation;
+    CellSet sandboxMarkedAsDeletedCells = new CellSet();
 
-    public AtomicSandboxOperation(SandboxTable sandboxTable, byte[] rowId, Mutation mutation) {
+    public AtomicSandboxOp(SandboxTable sandboxTable, byte[] rowId) {
         this.rowId = rowId;
         this.sandboxTable = sandboxTable;
-        this.mutation = mutation;
     }
 
+    protected abstract byte[] getTransactionId();
 
-    protected abstract Result runOpOnSandbox() throws IOException;
+    protected abstract CellSet getOpCells();
 
-    protected abstract Result runOpWithOrigValues(Map<Cell, ByteBuffer> originalCellToDirtyQualifMap) throws IOException;
+    protected abstract void runOpOnSandbox() throws IOException;
 
-    public Result run() throws IOException {
-        final byte[] transactionId = generateTransactionId(this.mutation);
-        Result result = null;
+    protected abstract void runOnDirtyColumns(Map<Cell, ByteBuffer> originalCellToDirtyQualifMap) throws IOException;
+
+    public void run() throws IOException {
+        final byte[] transactionId = getTransactionId();
 
         // attempt to acquire lock
         int tries = MAX_TRIES + 1;
@@ -54,21 +59,14 @@ public abstract class AtomicSandboxOperation {
 
         // lock acquired
         try {
-            CellSet cellSet = new CellSet(mutation.getFamilyCellMap());
+            CellSet cellSet = getOpCells();
 
-            // TODO extract method
-            final Get get = new Get(rowId);
-            for (Cell cell : cellSet) {
-                byte[] family = CellUtil.cloneFamily(cell);
-                byte[] qualifier = CellUtil.cloneQualifier(cell);
-                get.addColumn(family, qualifier);
-            }
-            // get sandbox
+            final Get get = tableGetForCells(rowId, cellSet);
+
+            // get sandbox version
             Result sandboxResult = sandboxTable.table.get(enrichGet(get));
-            Result originalResult = null;
 
             CellSet sandboxNonExistentCells = new CellSet();
-            CellSet sandboxMarkedAsDeletedCells = new CellSet();
 
             for (Cell cell : cellSet) {
                 byte[] family = CellUtil.cloneFamily(cell);
@@ -89,14 +87,15 @@ public abstract class AtomicSandboxOperation {
 
 
             // fetch cells existing in original and not existing (or marked as deleted) in the sandbox
+            Result originalResult = null;
             CellSet cellsExistingOnlyInOriginal = new CellSet();
             if (sandboxNonExistentCells.size() > 0) {
-                // TODO narrow Get
                 // fetch non existent cells values from original table
-                originalResult = sandboxTable.originalTable.get(get);
+                Get nonExistCellGet = tableGetForCells(rowId, sandboxNonExistentCells);
+                originalResult = sandboxTable.originalTable.get(nonExistCellGet);
 
                 // if they exist in the original, keep track of them to copy them later to dirty CF for manipulation
-                if (originalResult != null) {
+                if (originalResult != null && !originalResult.isEmpty()) {
                     for (Cell cell : sandboxNonExistentCells) {
                         byte[] family = CellUtil.cloneFamily(cell);
                         byte[] qualifier = CellUtil.cloneQualifier(cell);
@@ -109,8 +108,8 @@ public abstract class AtomicSandboxOperation {
             }
 
             if (cellsExistingOnlyInOriginal.size() == 0) {
-                result = runOpOnSandbox();
-            } else {
+                runOpOnSandbox();
+            } else if (originalResult != null) {
                 // copy cells from original to dirty columns
                 final Put putOnDirty = new Put(rowId);
 
@@ -125,46 +124,21 @@ public abstract class AtomicSandboxOperation {
 
                     Cell originalResultCell = originalResult.getColumnLatestCell(family, qualifier);
 
-                    putOnDirty.add(SandboxTable.DEFAULT_DIRTY_CF, dirtyQualififer
-                            , originalResultCell.getTimestamp(), CellUtil.cloneValue(originalResultCell));
+                    if (originalResultCell != null) {
+                        putOnDirty.add(SandboxTable.DEFAULT_DIRTY_CF, dirtyQualififer
+                                , originalResultCell.getTimestamp(), CellUtil.cloneValue(originalResultCell));
 
-                    originalCellToDirtyQualifMap.put(cell, ByteBuffer.wrap(dirtyQualififer));
+                        originalCellToDirtyQualifMap.put(cell, ByteBuffer.wrap(dirtyQualififer));
+                    }
                 }
                 sandboxTable.table.put(putOnDirty);
                 sandboxTable.table.flushCommits();
 
-                // TODO give also access to other cells (from sandbox)
-                // Run mutation specific logic on dirty columns
-                result = runOpWithOrigValues(originalCellToDirtyQualifMap);
-
-                // if the operation returns a result (increment or append)
-                if (result != null) {
-                    // copy results from dirty columns to sandbox
-                    Put putResults = new Put(rowId);
-
-                    for (Map.Entry<Cell, ByteBuffer> cellDirtyQualifEntry : originalCellToDirtyQualifMap.entrySet()) {
-                        byte[] dirtyQualifier = cellDirtyQualifEntry.getValue().array();
-                        byte[] value = result.getValue(SandboxTable.DEFAULT_DIRTY_CF, dirtyQualifier);
-
-                        // retrieve original family and qualififer
-                        Cell cell = cellDirtyQualifEntry.getKey();
-                        byte[] family = CellUtil.cloneFamily(cell);
-                        byte[] qualifier = CellUtil.cloneQualifier(cell);
-
-                        putResults.add(family, qualifier, value);
-                    }
-                    sandboxTable.table.put(putResults);
-                    sandboxTable.table.flushCommits();
-
-                    // TODO returned result assertion
-                }
+                runOnDirtyColumns(originalCellToDirtyQualifMap);
             }
 
+            // TODO this deletion loop won't work on checkAndX
             // delete deletion marks
-            if (sandboxMarkedAsDeletedCells.size() > 0) {
-                Delete delete = removeDeletionMark(rowId, sandboxMarkedAsDeletedCells);
-                sandboxTable.table.delete(delete);
-            }
         } finally {
             // delete any dirty column
             if (originalCellToDirtyQualifMap.size() > 0) {
@@ -179,8 +153,16 @@ public abstract class AtomicSandboxOperation {
             // release lock
             releaseLock(sandboxTable, rowId, transactionId);
         }
+    }
 
-        return result;
+    private static Get tableGetForCells(byte[] rowId, CellSet cellSet) {
+        final Get get = new Get(rowId);
+        for (Cell cell : cellSet) {
+            byte[] family = CellUtil.cloneFamily(cell);
+            byte[] qualifier = CellUtil.cloneQualifier(cell);
+            get.addColumn(family, qualifier);
+        }
+        return get;
     }
 
     // TODO consider pass these to utils
