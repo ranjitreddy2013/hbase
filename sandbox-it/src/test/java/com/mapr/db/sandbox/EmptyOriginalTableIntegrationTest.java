@@ -1,6 +1,7 @@
 package com.mapr.db.sandbox;
 
 import com.google.common.collect.Lists;
+import org.apache.hadoop.hbase.CellUtil;
 import org.apache.hadoop.hbase.client.*;
 import org.junit.Test;
 
@@ -11,327 +12,432 @@ import static com.mapr.db.sandbox.SandboxTestUtils.countCells;
 import static com.mapr.db.sandbox.SandboxTestUtils.countRows;
 import static org.junit.Assert.*;
 
-public class EmptyOriginalTableIntegrationTest extends BaseSandboxIntegrationTest {
-    @Test
-    public void testSandboxCountRows() throws IOException {
-        HTable hTable = new HTable(conf, sandboxTablePath);
+public class EmptyOriginalTableIntegrationTest extends
+		BaseSandboxIntegrationTest {
+	@Test
+	public void testSandboxCountRows() throws IOException {
+		HTable hTable = new HTable(conf, sandboxTablePath);
 
-        ResultScanner scanner = hTable.getScanner(new Scan());
-        assertEquals("original and sandbox tables should be empty", 0L, countRows(scanner));
+		ResultScanner scanner = hTable.getScanner(new Scan());
+		assertEquals("original and sandbox tables should be empty", 0L,
+				countRows(scanner));
 
+		for (int i = 0; i < 25; i++) {
+			Put put = new Put(new String("rowId" + i).getBytes());
+			put.add(FAMILY_BYTES, "col".getBytes(), Integer.toString(i)
+					.getBytes());
+			hTable.put(put);
+		}
+		hTable.flushCommits();
 
-        for (int i = 0; i < 25; i++) {
-            Put put = new Put(new String("rowId" + i).getBytes());
-            put.add(FAMILY_BYTES, "col".getBytes(), Integer.toString(i).getBytes());
-            hTable.put(put);
-        }
-        hTable.flushCommits();
+		ResultScanner scanner2 = hTable.getScanner(new Scan());
+		assertEquals("sandbox should have the new rows", 25L,
+				countRows(scanner2));
 
-        ResultScanner scanner2 = hTable.getScanner(new Scan());
-        assertEquals("sandbox should have the new rows", 25L, countRows(scanner2));
+		HTable originalHTable = new HTable(conf, originalTablePath);
+		scanner = originalHTable.getScanner(new Scan());
+		assertEquals("original table should remain empty", 0L,
+				countRows(scanner));
+	}
 
-        HTable originalHTable = new HTable(conf, originalTablePath);
-        scanner = originalHTable.getScanner(new Scan());
-        assertEquals("original table should remain empty", 0L, countRows(scanner));
-    }
+	@Test
+	public void testExists() throws IOException {
+		HTable hTable = new HTable(conf, sandboxTablePath);
+		HTable originalHTable = new HTable(conf, originalTablePath);
 
-    @Test
-    public void testExists() throws IOException {
-        HTable hTable = new HTable(conf, sandboxTablePath);
-        HTable originalHTable = new HTable(conf, originalTablePath);
+		String testRow1 = "rowId3";
+		String testRow2 = "rowId5";
 
-        String testRow1 = "rowId3";
-        String testRow2 = "rowId5";
+		assertFalse("sandbox should not contain any row at all",
+				hTable.exists(new Get(testRow1.getBytes())));
+		assertFalse("sandbox should not contain any row at all",
+				hTable.exists(new Get(testRow2.getBytes())));
 
-        assertFalse("sandbox should not contain any row at all",
-                hTable.exists(new Get(testRow1.getBytes())));
-        assertFalse("sandbox should not contain any row at all",
-                hTable.exists(new Get(testRow2.getBytes())));
+		// add the rows
+		Put put1 = new Put(testRow1.getBytes());
+		put1.add(FAMILY_BYTES, "col".getBytes(), Integer.toString(1).getBytes());
+		hTable.put(put1);
 
-        // add the rows
-        Put put1 = new Put(testRow1.getBytes());
-        put1.add(FAMILY_BYTES, "col".getBytes(), Integer.toString(1).getBytes());
-        hTable.put(put1);
+		Put put2 = new Put(testRow2.getBytes());
+		put2.add(FAMILY_BYTES, "col1".getBytes(), Integer.toString(1)
+				.getBytes());
+		put2.add(FAMILY_BYTES, "col2".getBytes(), Integer.toString(1)
+				.getBytes());
+		hTable.put(put2);
+		hTable.flushCommits();
 
-        Put put2 = new Put(testRow2.getBytes());
-        put2.add(FAMILY_BYTES, "col1".getBytes(), Integer.toString(1).getBytes());
-        put2.add(FAMILY_BYTES, "col2".getBytes(), Integer.toString(1).getBytes());
-        hTable.put(put2);
-        hTable.flushCommits();
+		assertFalse("original table should not contain added entry to sandbox",
+				originalHTable.exists(new Get(testRow1.getBytes())));
+		assertFalse("original table should not contain added entry to sandbox",
+				originalHTable.exists(new Get(testRow2.getBytes())));
+		assertTrue("sandbox should contain the newly added row",
+				hTable.exists(new Get(testRow1.getBytes())));
+		assertTrue("sandbox should contain the newly added row",
+				hTable.exists(new Get(testRow2.getBytes())));
 
-        assertFalse("original table should not contain added entry to sandbox",
-                originalHTable.exists(new Get(testRow1.getBytes())));
-        assertFalse("original table should not contain added entry to sandbox",
-                originalHTable.exists(new Get(testRow2.getBytes())));
-        assertTrue("sandbox should contain the newly added row",
-                hTable.exists(new Get(testRow1.getBytes())));
-        assertTrue("sandbox should contain the newly added row",
-                hTable.exists(new Get(testRow2.getBytes())));
+		// delete the row
+		hTable.delete(new Delete(testRow1.getBytes()));
+		hTable.flushCommits();
 
-        // delete the row
-        hTable.delete(new Delete(testRow1.getBytes()));
-        hTable.flushCommits();
+		assertFalse("original table should not contain added entry to sandbox",
+				originalHTable.exists(new Get(testRow1.getBytes())));
+		assertFalse("original table should not contain added entry to sandbox",
+				originalHTable.exists(new Get(testRow2.getBytes())));
+		assertFalse("sandbox should not contain the deleted row",
+				hTable.exists(new Get(testRow1.getBytes())));
+		assertTrue("sandbox should still contain the other row",
+				hTable.exists(new Get(testRow2.getBytes())));
 
-        assertFalse("original table should not contain added entry to sandbox",
-                originalHTable.exists(new Get(testRow1.getBytes())));
-        assertFalse("original table should not contain added entry to sandbox",
-                originalHTable.exists(new Get(testRow2.getBytes())));
-        assertFalse("sandbox should not contain the deleted row",
-                hTable.exists(new Get(testRow1.getBytes())));
-        assertTrue("sandbox should still contain the other row",
-                hTable.exists(new Get(testRow2.getBytes())));
+		// delete a col from 2nd row and check existance
+		Delete delete = new Delete(testRow1.getBytes());
+		delete.deleteColumn(FAMILY_BYTES, "col2".getBytes());
+		hTable.delete(delete);
+		hTable.flushCommits();
 
-        // delete a col from 2nd row and check existance
-        Delete delete = new Delete(testRow1.getBytes());
-        delete.deleteColumn(FAMILY_BYTES, "col2".getBytes());
-        hTable.delete(delete);
-        hTable.flushCommits();
+		assertFalse("original table should not contain added entry to sandbox",
+				originalHTable.exists(new Get(testRow1.getBytes())));
+		assertFalse("original table should not contain added entry to sandbox",
+				originalHTable.exists(new Get(testRow2.getBytes())));
+		assertFalse("sandbox should not contain the deleted row",
+				hTable.exists(new Get(testRow1.getBytes())));
+		assertTrue("sandbox should still contain the 2nd row",
+				hTable.exists(new Get(testRow2.getBytes())));
+	}
 
-        assertFalse("original table should not contain added entry to sandbox",
-                originalHTable.exists(new Get(testRow1.getBytes())));
-        assertFalse("original table should not contain added entry to sandbox",
-                originalHTable.exists(new Get(testRow2.getBytes())));
-        assertFalse("sandbox should not contain the deleted row",
-                hTable.exists(new Get(testRow1.getBytes())));
-        assertTrue("sandbox should still contain the 2nd row",
-                hTable.exists(new Get(testRow2.getBytes())));
-    }
+	@Test
+	public void testBatchExists() throws IOException {
+		HTable hTable = new HTable(conf, sandboxTablePath);
+		HTable originalHTable = new HTable(conf, originalTablePath);
 
-    @Test
-    public void testBatchExists() throws IOException {
-        HTable hTable = new HTable(conf, sandboxTablePath);
-        HTable originalHTable = new HTable(conf, originalTablePath);
+		String testRow1 = "rowId3";
+		String testRow2 = "rowId5";
 
-        String testRow1 = "rowId3";
-        String testRow2 = "rowId5";
+		Boolean[] results;
 
-        Boolean[] results;
+		// check original table
+		results = originalHTable.exists(Lists.newArrayList(
+				new Get(testRow1.getBytes()), new Get(testRow2.getBytes())));
 
-        // check original table
-        results = originalHTable.exists(Lists.newArrayList(
-                new Get(testRow1.getBytes()),
-                new Get(testRow2.getBytes())
-        ));
+		for (Boolean result : results) {
+			assertFalse("original should not contain any row at all", result);
+		}
 
-        for (Boolean result : results) {
-            assertFalse("original should not contain any row at all", result);
-        }
+		// check sandbox
+		results = hTable.exists(Lists.newArrayList(
+				new Get(testRow1.getBytes()), new Get(testRow2.getBytes())));
 
-        // check sandbox
-        results = hTable.exists(Lists.newArrayList(
-                new Get(testRow1.getBytes()),
-                new Get(testRow2.getBytes())
-        ));
+		for (Boolean result : results) {
+			assertFalse("sandbox should not contain any row at all", result);
+		}
 
-        for (Boolean result : results) {
-            assertFalse("sandbox should not contain any row at all", result);
-        }
+		// add the rows
+		Put put1 = new Put(testRow1.getBytes());
+		put1.add(FAMILY_BYTES, "col".getBytes(), Integer.toString(1).getBytes());
+		hTable.put(put1);
 
-        // add the rows
-        Put put1 = new Put(testRow1.getBytes());
-        put1.add(FAMILY_BYTES, "col".getBytes(), Integer.toString(1).getBytes());
-        hTable.put(put1);
+		Put put2 = new Put(testRow2.getBytes());
+		put2.add(FAMILY_BYTES, "col1".getBytes(), Integer.toString(1)
+				.getBytes());
+		put2.add(FAMILY_BYTES, "col2".getBytes(), Integer.toString(1)
+				.getBytes());
+		hTable.put(put2);
+		hTable.flushCommits();
 
-        Put put2 = new Put(testRow2.getBytes());
-        put2.add(FAMILY_BYTES, "col1".getBytes(), Integer.toString(1).getBytes());
-        put2.add(FAMILY_BYTES, "col2".getBytes(), Integer.toString(1).getBytes());
-        hTable.put(put2);
-        hTable.flushCommits();
+		// check original table
+		results = originalHTable.exists(Lists.newArrayList(
+				new Get(testRow1.getBytes()), new Get(testRow2.getBytes())));
 
-        // check original table
-        results = originalHTable.exists(Lists.newArrayList(
-                new Get(testRow1.getBytes()),
-                new Get(testRow2.getBytes())
-        ));
+		for (Boolean result : results) {
+			assertFalse("original should not contain any row at all", result);
+		}
 
-        for (Boolean result : results) {
-            assertFalse("original should not contain any row at all", result);
-        }
+		// check sandbox
+		results = hTable.exists(Lists.newArrayList(
+				new Get(testRow1.getBytes()), new Get(testRow2.getBytes())));
 
-        // check sandbox
-        results = hTable.exists(Lists.newArrayList(
-                new Get(testRow1.getBytes()),
-                new Get(testRow2.getBytes())
-        ));
+		for (Boolean result : results) {
+			assertTrue("sandbox should contain the newly added row", result);
+		}
 
-        for (Boolean result : results) {
-            assertTrue("sandbox should contain the newly added row", result);
-        }
+		// delete the row
+		hTable.delete(new Delete(testRow1.getBytes()));
+		hTable.flushCommits();
 
+		// check original table
+		results = originalHTable.exists(Lists.newArrayList(
+				new Get(testRow1.getBytes()), new Get(testRow2.getBytes())));
 
-        // delete the row
-        hTable.delete(new Delete(testRow1.getBytes()));
-        hTable.flushCommits();
+		for (Boolean result : results) {
+			assertFalse("original should not contain any row at all", result);
+		}
 
-        // check original table
-        results = originalHTable.exists(Lists.newArrayList(
-                new Get(testRow1.getBytes()),
-                new Get(testRow2.getBytes())
-        ));
+		// check sandbox table
+		results = hTable.exists(Lists.newArrayList(
+				new Get(testRow1.getBytes()), new Get(testRow2.getBytes())));
 
-        for (Boolean result : results) {
-            assertFalse("original should not contain any row at all", result);
-        }
+		assertFalse("sandbox should not contain the deleted row", results[0]);
+		assertTrue("sandbox should still contain the other row", results[1]);
 
-        // check sandbox table
-        results = hTable.exists(Lists.newArrayList(
-                new Get(testRow1.getBytes()),
-                new Get(testRow2.getBytes())
-        ));
+		// delete a col from 2nd row and check existance
+		Delete delete = new Delete(testRow1.getBytes());
+		delete.deleteColumn(FAMILY_BYTES, "col2".getBytes());
+		hTable.delete(delete);
+		hTable.flushCommits();
 
-        assertFalse("sandbox should not contain the deleted row", results[0]);
-        assertTrue("sandbox should still contain the other row", results[1]);
+		// check original table
+		results = originalHTable.exists(Lists.newArrayList(
+				new Get(testRow1.getBytes()), new Get(testRow2.getBytes())));
 
-        // delete a col from 2nd row and check existance
-        Delete delete = new Delete(testRow1.getBytes());
-        delete.deleteColumn(FAMILY_BYTES, "col2".getBytes());
-        hTable.delete(delete);
-        hTable.flushCommits();
+		for (Boolean result : results) {
+			assertFalse("original should not contain any row at all", result);
+		}
 
-        // check original table
-        results = originalHTable.exists(Lists.newArrayList(
-                new Get(testRow1.getBytes()),
-                new Get(testRow2.getBytes())
-        ));
+		// check sandbox table
+		results = hTable.exists(Lists.newArrayList(
+				new Get(testRow1.getBytes()), new Get(testRow2.getBytes())));
 
-        for (Boolean result : results) {
-            assertFalse("original should not contain any row at all", result);
-        }
+		assertFalse("sandbox should not contain the deleted row", results[0]);
+		assertTrue("sandbox should still contain the 2nd row", results[1]);
+	}
 
-        // check sandbox table
-        results = hTable.exists(Lists.newArrayList(
-                new Get(testRow1.getBytes()),
-                new Get(testRow2.getBytes())
-        ));
+	@Test
+	public void testBatchDelete() throws IOException {
+		HTable hTable = new HTable(conf, sandboxTablePath);
+		HTable originalHTable = new HTable(conf, originalTablePath);
 
-        assertFalse("sandbox should not contain the deleted row", results[0]);
-        assertTrue("sandbox should still contain the 2nd row", results[1]);
-    }
+		ResultScanner scanner;
 
+		// check initial state
+		scanner = originalHTable.getScanner(new Scan());
+		assertEquals("original and sandbox tables should be empty", 0L,
+				countCells(scanner));
+		scanner = hTable.getScanner(new Scan());
+		assertEquals("original and sandbox tables should be empty", 0L,
+				countCells(scanner));
 
-    @Test
-    public void testBatchDelete() throws IOException {
-        HTable hTable = new HTable(conf, sandboxTablePath);
-        HTable originalHTable = new HTable(conf, originalTablePath);
+		// insert some data into sandbox
+		for (int i = 0; i < 25; i++) {
+			Put put = new Put(new String("rowId" + i).getBytes());
+			put.add(FAMILY_BYTES, "col1".getBytes(), Integer.toString(i)
+					.getBytes());
+			put.add(FAMILY_BYTES, "col2".getBytes(), Integer.toString(i * 5)
+					.getBytes());
+			hTable.put(put);
+		}
+		hTable.flushCommits();
 
-        ResultScanner scanner;
+		// count cells
+		scanner = originalHTable.getScanner(new Scan());
+		assertEquals("original table should be empty", 0L, countCells(scanner));
+		scanner = hTable.getScanner(new Scan());
+		assertEquals("sandbox should contain all inserted cells", 50L,
+				countCells(scanner));
+		scanner = hTable.getScanner(new Scan());
+		assertEquals("sandbox should contain all inserted rows", 25L,
+				countRows(scanner));
 
-        // check initial state
-        scanner = originalHTable.getScanner(new Scan());
-        assertEquals("original and sandbox tables should be empty", 0L, countCells(scanner));
-        scanner = hTable.getScanner(new Scan());
-        assertEquals("original and sandbox tables should be empty", 0L, countCells(scanner));
+		// delete 2nd col from 5 rows
+		List<Delete> deletes = Lists.newArrayList();
+		for (int i = 0; i < 5; i++) {
+			Delete delete = new Delete(new String("rowId" + i).getBytes());
+			delete.deleteColumns(FAMILY_BYTES, "col2".getBytes());
+			deletes.add(delete);
+		}
+		hTable.delete(deletes);
 
+		// recheck
+		scanner = originalHTable.getScanner(new Scan());
+		assertEquals("original table should be empty", 0L, countCells(scanner));
+		scanner = hTable.getScanner(new Scan());
+		assertEquals("sandbox should contain all inserted cells", 45L,
+				countCells(scanner));
+		scanner = hTable.getScanner(new Scan());
+		assertEquals("sandbox should contain all inserted rows", 25L,
+				countRows(scanner));
+	}
 
-        // insert some data into sandbox
-        for (int i = 0; i < 25; i++) {
-            Put put = new Put(new String("rowId" + i).getBytes());
-            put.add(FAMILY_BYTES, "col1".getBytes(), Integer.toString(i).getBytes());
-            put.add(FAMILY_BYTES, "col2".getBytes(), Integer.toString(i * 5).getBytes());
-            hTable.put(put);
-        }
-        hTable.flushCommits();
+	@Test
+	public void testBatchPut() throws IOException {
+		HTable hTable = new HTable(conf, sandboxTablePath);
+		HTable originalHTable = new HTable(conf, originalTablePath);
 
-        // count cells
-        scanner = originalHTable.getScanner(new Scan());
-        assertEquals("original table should be empty", 0L, countCells(scanner));
-        scanner = hTable.getScanner(new Scan());
-        assertEquals("sandbox should contain all inserted cells", 50L, countCells(scanner));
-        scanner = hTable.getScanner(new Scan());
-        assertEquals("sandbox should contain all inserted rows", 25L, countRows(scanner));
+		ResultScanner scanner;
 
-        // delete 2nd col from 5 rows
-        List<Delete> deletes = Lists.newArrayList();
-        for (int i = 0; i < 5; i++) {
-            Delete delete = new Delete(new String("rowId" + i).getBytes());
-            delete.deleteColumns(FAMILY_BYTES, "col2".getBytes());
-            deletes.add(delete);
-        }
-        hTable.delete(deletes);
+		// check initial state
+		scanner = originalHTable.getScanner(new Scan());
+		assertEquals("original and sandbox tables should be empty", 0L,
+				countCells(scanner));
+		scanner = hTable.getScanner(new Scan());
+		assertEquals("original and sandbox tables should be empty", 0L,
+				countCells(scanner));
 
-        // recheck
-        scanner = originalHTable.getScanner(new Scan());
-        assertEquals("original table should be empty", 0L, countCells(scanner));
-        scanner = hTable.getScanner(new Scan());
-        assertEquals("sandbox should contain all inserted cells", 45L, countCells(scanner));
-        scanner = hTable.getScanner(new Scan());
-        assertEquals("sandbox should contain all inserted rows", 25L, countRows(scanner));
-    }
+		// insert some data into sandbox
+		for (int i = 0; i < 25; i++) {
+			Put put = new Put(new String("rowId" + i).getBytes());
+			put.add(FAMILY_BYTES, "col1".getBytes(), Integer.toString(i)
+					.getBytes());
+			put.add(FAMILY_BYTES, "col2".getBytes(), Integer.toString(i * 5)
+					.getBytes());
+			hTable.put(put);
+		}
+		hTable.flushCommits();
 
+		// count cells
+		scanner = originalHTable.getScanner(new Scan());
+		assertEquals("original table should be empty", 0L, countCells(scanner));
+		scanner = hTable.getScanner(new Scan());
+		assertEquals("sandbox should contain all inserted cells", 50L,
+				countCells(scanner));
+		scanner = hTable.getScanner(new Scan());
+		assertEquals("sandbox should contain all inserted rows", 25L,
+				countRows(scanner));
 
-    @Test
-    public void testBatchPut() throws IOException {
-        HTable hTable = new HTable(conf, sandboxTablePath);
-        HTable originalHTable = new HTable(conf, originalTablePath);
+		// delete some rows
+		for (int i = 0; i < 10; i++) {
+			Delete delete = new Delete(new String("rowId" + i).getBytes());
+			hTable.delete(delete);
+		}
 
-        ResultScanner scanner;
+		// count cells
+		scanner = originalHTable.getScanner(new Scan());
+		assertEquals("original table should be empty", 0L, countCells(scanner));
+		scanner = hTable.getScanner(new Scan());
+		assertEquals("sandbox should contain all inserted cells", 30L,
+				countCells(scanner));
+		scanner = hTable.getScanner(new Scan());
+		assertEquals("sandbox should contain all inserted rows", 15L,
+				countRows(scanner));
 
-        // check initial state
-        scanner = originalHTable.getScanner(new Scan());
-        assertEquals("original and sandbox tables should be empty", 0L, countCells(scanner));
-        scanner = hTable.getScanner(new Scan());
-        assertEquals("original and sandbox tables should be empty", 0L, countCells(scanner));
+		// update columns
+		for (int i = 5; i < 10; i++) {
+			Put put = new Put(new String("rowId" + i).getBytes());
+			put.add(FAMILY_BYTES, "col3".getBytes(), "other value".getBytes());
+			hTable.put(put);
+		}
+		hTable.flushCommits();
 
+		// count cells
+		scanner = originalHTable.getScanner(new Scan());
+		assertEquals("original table should be empty", 0L, countCells(scanner));
+		scanner = hTable.getScanner(new Scan());
+		assertEquals("sandbox should contain all inserted cells", 35L,
+				countCells(scanner));
+		scanner = hTable.getScanner(new Scan());
+		assertEquals("sandbox should contain all inserted rows", 20L,
+				countRows(scanner));
+	}
 
-        // insert some data into sandbox
-        for (int i = 0; i < 25; i++) {
-            Put put = new Put(new String("rowId" + i).getBytes());
-            put.add(FAMILY_BYTES, "col1".getBytes(), Integer.toString(i).getBytes());
-            put.add(FAMILY_BYTES, "col2".getBytes(), Integer.toString(i * 5).getBytes());
-            hTable.put(put);
-        }
-        hTable.flushCommits();
+	@Test(expected = UnsupportedOperationException.class)
+	public void testGetRowOrBefore() throws IOException {
+		HTable hTable = new HTable(conf, sandboxTablePath);
+		HTable originalHTable = new HTable(conf, originalTablePath);
 
-        // count cells
-        scanner = originalHTable.getScanner(new Scan());
-        assertEquals("original table should be empty", 0L, countCells(scanner));
-        scanner = hTable.getScanner(new Scan());
-        assertEquals("sandbox should contain all inserted cells", 50L, countCells(scanner));
-        scanner = hTable.getScanner(new Scan());
-        assertEquals("sandbox should contain all inserted rows", 25L, countRows(scanner));
+		Result result;
+		// test empty table case
+		String testRow = "rowId0";
+		result = originalHTable
+				.getRowOrBefore(testRow.getBytes(), FAMILY_BYTES);
+		assertTrue("original should not return any row", result.isEmpty());
+		result = hTable.getRowOrBefore(testRow.getBytes(), FAMILY_BYTES);
+		assertTrue("sandbox should not return any row", result.isEmpty());
+	}
 
-        // delete some rows
-        for (int i = 0; i < 10; i++) {
-            Delete delete = new Delete(new String("rowId" + i).getBytes());
-            hTable.delete(delete);
-        }
+	@Test
+	public void testMutateRow() throws IOException {
+		HTable hTable = new HTable(conf, sandboxTablePath);
+		HTable originalHTable = new HTable(conf, originalTablePath);
 
-        // count cells
-        scanner = originalHTable.getScanner(new Scan());
-        assertEquals("original table should be empty", 0L, countCells(scanner));
-        scanner = hTable.getScanner(new Scan());
-        assertEquals("sandbox should contain all inserted cells", 30L, countCells(scanner));
-        scanner = hTable.getScanner(new Scan());
-        assertEquals("sandbox should contain all inserted rows", 15L, countRows(scanner));
+		final String testRow = "rowId1";
 
-        // update columns
-        for (int i = 5; i < 10; i++) {
-            Put put = new Put(new String("rowId" + i).getBytes());
-            put.add(FAMILY_BYTES, "col3".getBytes(), "other value".getBytes());
-            hTable.put(put);
-        }
-        hTable.flushCommits();
+		Result result;
 
-        // count cells
-        scanner = originalHTable.getScanner(new Scan());
-        assertEquals("original table should be empty", 0L, countCells(scanner));
-        scanner = hTable.getScanner(new Scan());
-        assertEquals("sandbox should contain all inserted cells", 35L, countCells(scanner));
-        scanner = hTable.getScanner(new Scan());
-        assertEquals("sandbox should contain all inserted rows", 20L, countRows(scanner));
-    }
+		// check there's nothing in the sandbox before the test
+		Get get = new Get(testRow.getBytes());
 
-    @Test(expected = UnsupportedOperationException.class)
-    public void testGetRowOrBefore() throws IOException {
-        HTable hTable = new HTable(conf, sandboxTablePath);
-        HTable originalHTable = new HTable(conf, originalTablePath);
+		result = originalHTable.get(get);
+		assertTrue("original should not return any row", result.isEmpty());
+		result = hTable.get(get);
+		assertTrue("sandbox should not return any row", result.isEmpty());
 
-        Result result;
-        // test empty table case
-        String testRow = "rowId0";
-        result = originalHTable.getRowOrBefore(testRow.getBytes(), FAMILY_BYTES);
-        assertTrue("original should not return any row", result.isEmpty());
-        result = hTable.getRowOrBefore(testRow.getBytes(), FAMILY_BYTES);
-        assertTrue("sandbox should not return any row", result.isEmpty());
-    }
+		// load sandbox table with a row
+		Put put = new Put(testRow.getBytes());
+		put.add(FAMILY_BYTES, "col1".getBytes(), "1".getBytes());
+		put.add(FAMILY_BYTES, "col2".getBytes(), "2".getBytes());
+		hTable.put(put);
+		hTable.flushCommits();
+
+		// perform mutation
+		put = new Put(testRow.getBytes());
+		put.add(FAMILY_BYTES, "col2".getBytes(), "20".getBytes());
+
+		Delete delete = new Delete(testRow.getBytes());
+		delete.deleteColumn(FAMILY_BYTES, "col1".getBytes());
+
+		RowMutations rm = new RowMutations(testRow.getBytes());
+		rm.add(put);
+		rm.add(delete);
+		hTable.mutateRow(rm);
+		hTable.flushCommits();
+
+		// verify things got changed
+		result = originalHTable.get(get);
+		assertTrue("original should not return any row", result.isEmpty());
+		result = hTable.get(get);
+
+		assertFalse("sandbox should return the mutations", result.isEmpty());
+		assertTrue("should contain the changed column",
+				result.containsColumn(FAMILY_BYTES, "col2".getBytes()));
+		assertFalse("shouldn't contain the deleted column",
+				result.containsColumn(FAMILY_BYTES, "col1".getBytes()));
+		assertTrue(
+				"should contain the updated value",
+				CellUtil.matchingValue(
+						result.getColumnLatestCell(FAMILY_BYTES,
+								"col2".getBytes()), "20".getBytes()));
+
+	}
+
+	@Test
+	public void testAppend() throws IOException {
+		HTable hTable = new HTable(conf, sandboxTablePath);
+		HTable originalHTable = new HTable(conf, originalTablePath);
+
+		final String testRow = "rowId1";
+
+		Result result;
+
+		// check there's nothing in the sandbox before the test
+		Get get = new Get(testRow.getBytes());
+
+		result = originalHTable.get(get);
+		assertTrue("original should not return any row", result.isEmpty());
+		result = hTable.get(get);
+		assertTrue("sandbox should not return any row", result.isEmpty());
+
+		// load sandbox table with a row
+		Put put = new Put(testRow.getBytes());
+		put.add(FAMILY_BYTES, "col".getBytes(), "1".getBytes());
+		hTable.put(put);
+		hTable.flushCommits();
+
+		// perform mutation
+		Append append = new Append(testRow.getBytes());
+		append.add(FAMILY_BYTES, "col".getBytes(), "20".getBytes());
+		append.add(FAMILY_BYTES, "col2".getBytes(), "456".getBytes());
+		hTable.append(append);
+
+		// verify things got changed
+		result = originalHTable.get(get);
+		assertTrue("original should not return any row", result.isEmpty());
+		result = hTable.get(get);
+		assertFalse("original should not return any row", result.isEmpty());
+
+		assertFalse("sandbox should return the mutations", result.isEmpty());
+		assertTrue(
+				"should contain the updated value",
+				CellUtil.matchingValue(
+						result.getColumnLatestCell(FAMILY_BYTES,
+								"col".getBytes()), "120".getBytes()));
+	}
+
 }

@@ -263,8 +263,27 @@ public class SandboxHTable {
         throw new UnsupportedOperationException("This is not supported for MapR table");
     }
 
-    public static void mutateRow(SandboxTable sandboxTable, RowMutations rm) {
-        // TODO
+    public static void mutateRow(SandboxTable sandboxTable, RowMutations rm) throws IOException {
+        RowMutations finalRm = new RowMutations(rm.getRow());
+
+        for (Mutation mutation : rm.getMutations()) {
+            Class clz = mutation.getClass();
+            // if it is a delete, add the put to metadata table
+            if (clz.equals(Delete.class)) {
+                Delete delete = (Delete) mutation;
+                Put markForDeletionPut = SandboxTableUtils.markForDeletionPut(sandboxTable, delete);
+                finalRm.add(delete);
+                finalRm.add(markForDeletionPut);
+            }  else if (clz.equals(Put.class)) {
+                // if it is a PUT, make sure there is no delete there
+                Put put = (Put) mutation;
+                Delete deletionMarkDelete = removeDeletionMarkForPut(put);
+                finalRm.add(put);
+                finalRm.add(deletionMarkDelete);
+            }
+        }
+
+        sandboxTable.table.mutateRow(finalRm);
     }
 
 	public static Result append(SandboxTable sandboxTable, Append append)
