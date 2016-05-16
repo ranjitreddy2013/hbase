@@ -96,9 +96,9 @@ public class SandboxTool {
             System.exit(-1);
         }
 
-        SandboxAdmin sandboxAdmin = new SandboxAdmin(new Configuration());
-
         try {
+            final SandboxAdmin sandboxAdmin = new SandboxAdmin(new Configuration());
+
             if (operation.equals(OP_CREATE)) {
                 sandboxAdmin.createSandbox(cmd.getOptionValue("path"),
                         cmd.getOptionValue("original"));
@@ -136,7 +136,12 @@ public class SandboxTool {
             }
         } catch (SandboxException e) {
             System.err.println("Error: " + e.getMessage());
-        }
+            System.exit(-1);
+        } catch (IOException e) {
+        System.err.println("Error: " + e.getMessage());
+        System.exit(-1);
+    }
+        System.exit(0);
     }
 
     private static void printUsage(String op) {

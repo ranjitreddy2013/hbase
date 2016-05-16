@@ -1,7 +1,6 @@
 package com.mapr.db.sandbox;
 
 import com.google.common.collect.Lists;
-import com.mapr.cli.MapRCliUtil;
 import com.mapr.fs.MapRFileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.log4j.Logger;
@@ -20,20 +19,20 @@ public class RecentSandboxTablesListManager {
     private static final Logger LOG = Logger.getLogger(RecentSandboxTablesListManager.class);
     private static final int MAX_RECENT_TABLES_LIST_SIZE = 50;
     private static final String RECENT_TABLES_FILE_NAME = ".recent_sandbox_tables";
-    private final String user;
+    private final MapRFileSystem fs;
 
-    public RecentSandboxTablesListManager(String user) {
-        this.user = user;
+    public RecentSandboxTablesListManager(MapRFileSystem fs) {
+        this.fs = fs;
     }
 
     /**
-     * Check if {@link #user} has a home directory or not.
+     * Check if iser has a home directory or not.
      * @return
      */
     public boolean hasHomeDir() {
         try {
-            return MapRCliUtil.getMapRFileSystem().exists(new Path(getHomeDir())) &&
-                    !MapRCliUtil.getMapRFileSystem().isFile(new Path(getHomeDir()));
+            return fs.exists(new Path(getHomeDir())) &&
+                    fs.isFile(new Path(getHomeDir()));
         } catch (Exception e) {
             LOG.error(e);
         }
@@ -100,10 +99,9 @@ public class RecentSandboxTablesListManager {
         List<String> tablePaths = Lists.newArrayList();
         try {
             Path recentTablesFilePath = new Path(getPathForRecentTablesFile());
-            MapRFileSystem mfs = MapRCliUtil.getMapRFileSystem();
-            if (mfs.isFile(recentTablesFilePath)) {
+            if (fs.isFile(recentTablesFilePath)) {
                 BufferedReader reader = new BufferedReader(new InputStreamReader(
-                        mfs.open(new Path(getPathForRecentTablesFile()))));
+                        fs.open(new Path(getPathForRecentTablesFile()))));
                 String path;
                 while ((path = reader.readLine()) != null) {
                     tablePaths.add(path);
@@ -118,13 +116,12 @@ public class RecentSandboxTablesListManager {
 
     private void writeListToFile(List<String> recentTablesList) {
         try {
-            MapRFileSystem mfs = MapRCliUtil.getMapRFileSystem();
             String filePath = getPathForRecentTablesFile();
 
             // First write to a temp file...
             String tempFilePath = filePath + new Random().nextInt();
             BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(
-                    mfs.create(new Path(tempFilePath), true).getWrappedStream()));
+                    fs.create(new Path(tempFilePath), true).getWrappedStream()));
             for (String tablePath : recentTablesList) {
                 writer.write(tablePath, 0, tablePath.length());
                 writer.newLine();
@@ -132,7 +129,7 @@ public class RecentSandboxTablesListManager {
             writer.close();
 
             // ...then do a rename
-            mfs.rename(new Path(tempFilePath), new Path(filePath));
+            fs.rename(new Path(tempFilePath), new Path(filePath));
         } catch (Exception e) {
             LOG.error(e);
         }
@@ -143,6 +140,6 @@ public class RecentSandboxTablesListManager {
     }
 
     private String getHomeDir() {
-        return "/user/" + user;
+        return "/user/mapr ";
     }
 }

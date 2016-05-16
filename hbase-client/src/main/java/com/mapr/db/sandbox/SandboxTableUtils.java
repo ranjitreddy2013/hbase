@@ -40,8 +40,13 @@ public class SandboxTableUtils {
     }
 
     public static String getFidFromPath(MapRFileSystem fs, String tablePath) throws IOException {
+        final Path path = new Path(tablePath);
+        if (!fs.exists(path) || !fs.isTable(path)) {
+            throw new IOException(tablePath + " table not found.");
+        }
+
         try {
-            return fs.getMapRFileStatus(new Path(tablePath)).getFidStr();
+            return fs.getMapRFileStatus(path).getFidStr();
         } catch (IOException e) {
             throw new IOException(String.format("Could not grab FID from table %s", tablePath), e);
         }

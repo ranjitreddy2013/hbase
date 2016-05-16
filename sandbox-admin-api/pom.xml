@@ -23,38 +23,57 @@
   </repositories>
 
   <properties>
-    <mapr.version>5.0.9-mapr</mapr.version>
+    <mapr.version>5.0.0-mapr</mapr.version>
+    <mapr.home>/opt/mapr/lib</mapr.home>
   </properties>
-
 
   <dependencies>
     <dependency>
-      <groupId>com.mapr.cli</groupId>
-      <artifactId>maprcli</artifactId>
-      <version>5.0.9-mapr</version>
-      <exclusions>
-        <exclusion>
-          <groupId>com.mapr.hadoop</groupId>
-          <artifactId>maprfs</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-
-    <dependency>
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-common</artifactId>
-      <version>2.7.0-mapr-1506</version>
     </dependency>
 
     <dependency>
       <groupId>com.mapr.hadoop</groupId>
       <artifactId>maprfs</artifactId>
       <version>${mapr.version}</version>
+      <scope>system</scope>
+      <systemPath>${mapr.home}/maprfs-${mapr.version}.jar</systemPath>
+    </dependency>
+
+    <dependency>
+      <groupId>com.mapr.fs</groupId>
+      <artifactId>mapr-hbase</artifactId>
+      <version>${mapr.version}</version>
+      <scope>system</scope>
+      <systemPath>${mapr.home}/mapr-hbase-${mapr.version}.jar</systemPath>
     </dependency>
 
     <dependency>
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.httpcomponents</groupId>
+      <artifactId>httpclient</artifactId>
+      <version>4.5.1</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-client</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-server</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.json</groupId>
+      <artifactId>json</artifactId>
+      <version>20080701</version>
     </dependency>
   </dependencies>
 

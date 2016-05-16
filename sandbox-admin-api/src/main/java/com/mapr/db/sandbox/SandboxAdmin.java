@@ -2,25 +2,24 @@ package com.mapr.db.sandbox;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
-import com.mapr.cli.*;
-import com.mapr.cliframework.base.*;
 import com.mapr.db.sandbox.utils.SandboxAdminUtils;
 import com.mapr.fs.MapRFileSystem;
+import com.mapr.rest.MapRRestClient;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.commons.math3.util.Pair;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.util.Pair;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.map.SerializationConfig;
-import org.json.JSONException;
-import org.json.JSONObject;
 
 import java.io.IOException;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+
+import static com.mapr.db.sandbox.utils.SandboxAdminUtils.replicationBytesPending;
 
 public class SandboxAdmin {
     private static final Log LOG = LogFactory.getLog(SandboxAdmin.class);
@@ -31,10 +30,19 @@ public class SandboxAdmin {
     public static final String SANDBOX_PUSH_SNAPSHOT_FORMAT = "sandbox_push_%s";
 
     MapRFileSystem fs;
-    CLICommandFactory cmdFactory = CLICommandFactory.getInstance();
-    CLIShim cliShim = new CLIShim();
-    RecentSandboxTablesListManager recentSandboxManager = RecentSandboxTablesListManagers
-            .getRecentSandboxTablesListManagerForUser(cliShim.getUserLoginId());
+    MapRRestClient restClient;
+    RecentSandboxTablesListManager recentSandboxManager;
+
+    public SandboxAdmin(Configuration configuration) throws SandboxException {
+        try {
+            fs = (MapRFileSystem) FileSystem.get(configuration);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        restClient = new MapRRestClient("localhost:8443", "mapr", "mapr");
+        recentSandboxManager = new RecentSandboxTablesListManager(fs);
+    }
+
 
     public void createSandbox(String sandboxTablePath, String originalTablePath) throws SandboxException, IOException {
         String originalFid = SandboxTableUtils.getFidFromPath(fs, originalTablePath);
@@ -42,7 +50,7 @@ public class SandboxAdmin {
         createEmptySandboxTable(sandboxTablePath, originalTablePath);
 
         // creates paused replication from sand to original; original doesn't incl sand in the upstream
-        SandboxAdminUtils.addTableReplica(cmdFactory, sandboxTablePath, originalTablePath, true);
+        SandboxAdminUtils.addTableReplica(restClient, sandboxTablePath, originalTablePath, true);
         writeSandboxMetadataFile(sandboxTablePath, originalFid, SandboxTable.SandboxState.ENABLED);
         recentSandboxManager.moveToTop(sandboxTablePath);
     }
@@ -53,6 +61,8 @@ public class SandboxAdmin {
      * @param forcePush
      */
     public void pushSandbox(String sandboxTablePath, boolean snapshot, boolean forcePush) throws IOException, SandboxException {
+        final String LOG_MSG_PREFIX = "Sandbox " + sandboxTablePath + " > ";
+
         // read sandbox metadata
         EnumMap<SandboxTable.InfoType, String> info = SandboxTableUtils.readSandboxInfo(fs, sandboxTablePath);
         final String originalFid = info.get(SandboxTable.InfoType.ORIGINAL_FID);
@@ -62,69 +72,91 @@ public class SandboxAdmin {
         final Path lockFile = SandboxTableUtils.lockFilePath(fs, originalFid, originalPath);
         createLockFile(fs, lockFile);
 
-        // TODO add flag 'force' to make sure all the modifications have a recent timestamp? (pending on testing scenarios)
-        if (forcePush) {
+        try {
+            // TODO add flag 'force' to make sure all the modifications have a recent timestamp? (pending on testing scenarios)
+            if (forcePush) {
+                boolean forcePushSuccess = false;
+                try {
+                    forcePushSuccess = TouchSandboxChangesJob.touchSandboxChanges(sandboxTablePath, true);
+                } catch (Exception e) {
+                    throw new SandboxException(LOG_MSG_PREFIX + "Error updating sandbox changes to latest timestamp", e);
+                }
 
-        }
+                System.out.println(forcePushSuccess);
+            }
 
 
-        // prevent any kind of editing to the sandbox table // TODO work in progress
+            // prevent any kind of editing to the sandbox table // TODO work in progress
 //        SandboxAdminUtils.lockEditsForTable(sandboxTablePath);
 
 
-        // disable sandbox table
-        writeSandboxMetadataFile(sandboxTablePath, originalFid, SandboxTable.SandboxState.SNAPSHOT_CREATE);
+            // disable sandbox table
+            writeSandboxMetadataFile(sandboxTablePath, originalFid, SandboxTable.SandboxState.SNAPSHOT_CREATE);
 
-        if (snapshot) {
-            String snapshotName = String.format(SANDBOX_PUSH_SNAPSHOT_FORMAT, info.get(SandboxTable.InfoType.SANDBOX_FID));
-            Pair<String, Path> volumeInfo = SandboxAdminUtils.getVolumeInfoForPath(fs, originalPath.getParent());
-            String origTableVolumeName = volumeInfo.getFirst();
-            SandboxAdminUtils.createSnapshot(cmdFactory, origTableVolumeName, snapshotName);
-        }
+            if (snapshot) {
+                String snapshotName = String.format(SANDBOX_PUSH_SNAPSHOT_FORMAT, info.get(SandboxTable.InfoType.SANDBOX_FID));
+                Pair<String, Path> volumeInfo = SandboxAdminUtils.getVolumeInfoForPath(restClient, originalPath);
+                String origTableVolumeName = volumeInfo.getFirst();
+                LOG.info(LOG_MSG_PREFIX + "Creating snapshot " + snapshotName + " in volume " + origTableVolumeName);
+                SandboxAdminUtils.createSnapshot(restClient, origTableVolumeName, snapshotName);
+                LOG.info(LOG_MSG_PREFIX + "Snapshot created in volume " + origTableVolumeName);
+            }
 
-        writeSandboxMetadataFile(sandboxTablePath, originalFid, SandboxTable.SandboxState.PUSH_STARTED);
+            writeSandboxMetadataFile(sandboxTablePath, originalFid, SandboxTable.SandboxState.PUSH_STARTED);
 
-        // TODO do something about keeping the meta cf without affecting the current replication
-        // Delete sandbox specific CFs
-        SandboxAdminUtils.deleteCF(cmdFactory, sandboxTablePath, SandboxTable.DEFAULT_META_CF_NAME);
-        SandboxAdminUtils.deleteCF(cmdFactory, sandboxTablePath, SandboxTable.DEFAULT_DIRTY_CF_NAME);
+            // TODO do something about keeping the meta cf without affecting the current replication
+            // Delete sandbox specific CFs
+            SandboxAdminUtils.deleteCF(restClient, sandboxTablePath, SandboxTable.DEFAULT_META_CF_NAME);
+            SandboxAdminUtils.deleteCF(restClient, sandboxTablePath, SandboxTable.DEFAULT_DIRTY_CF_NAME);
 
-        // add sandbox as upstream of original
-        SandboxAdminUtils.addUpstreamTable(cmdFactory, originalTablePath, sandboxTablePath);
+            // add sandbox as upstream of original
+            LOG.info(LOG_MSG_PREFIX + "Adding sandbox table to original's upstream list");
+            SandboxAdminUtils.addUpstreamTable(restClient, originalTablePath, sandboxTablePath);
+            LOG.info(LOG_MSG_PREFIX + "Sandbox added to original's upstream list");
 
-        // Resume repl
-        SandboxAdminUtils.resumeReplication(cmdFactory, sandboxTablePath, originalTablePath);
+            // Resume repl
+            SandboxAdminUtils.resumeReplication(restClient, sandboxTablePath, originalTablePath);
+            LOG.info(LOG_MSG_PREFIX + "Sandbox replication to original table resumed");
 
 
-        // the application will periodically monitor the state of the replication. this method
-        // will return when the replication has completed
-        LOG.info("Waiting for sandbox table to finish replication");
-        int bytesPending = _getReplicationBytesPending(sandboxTablePath);
+            // the application will periodically monitor the state of the replication. this method
+            // will return when the replication has completed
+            LOG.info(LOG_MSG_PREFIX + "Waiting for sandbox table to finish replication");
+            int bytesPending = replicationBytesPending(restClient, sandboxTablePath);
 
-        while (bytesPending > 0) {
+            while (bytesPending > 0) {
+                try {
+                    Thread.sleep(REPLICA_WAIT_POLL_INTERVAL);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                bytesPending = replicationBytesPending(restClient, sandboxTablePath);
+            }
+            LOG.info(LOG_MSG_PREFIX + "Replication to original complete – 0 bytes pending");
+
             try {
-                Thread.sleep(REPLICA_WAIT_POLL_INTERVAL);
+                Thread.sleep(REPLICA_TO_PROXY_WAIT_TIME);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
 
-            bytesPending = _getReplicationBytesPending(sandboxTablePath);
+            // pause replication
+            SandboxAdminUtils.pauseReplication(restClient, sandboxTablePath, originalTablePath);
+            LOG.info(LOG_MSG_PREFIX + "Sandbox replication link paused after push");
+
+            // remove sandbox as upstream of original
+            SandboxAdminUtils.removeUpstreamTable(restClient, originalTablePath, sandboxTablePath);
+            LOG.info(LOG_MSG_PREFIX + "Sandbox table removed from original upstream list");
+        } finally {
+            // remove lock file
+            try {
+                fs.delete(lockFile);
+            } catch (IOException e) {
+                LOG.error(LOG_MSG_PREFIX + "Could not delete push lockfile " + lockFile.toString());
+            }
         }
-
-        try {
-            Thread.sleep(REPLICA_TO_PROXY_WAIT_TIME);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-
-        // pause replication
-        SandboxAdminUtils.pauseReplication(cmdFactory, sandboxTablePath, originalTablePath);
-
-        // remove sandbox as upstream of original
-        SandboxAdminUtils.removeUpstreamTable(cmdFactory, originalTablePath, sandboxTablePath);
-
-        // remove lock file
-        fs.delete(lockFile); // TODO might be worth handle exception here
+        LOG.info(LOG_MSG_PREFIX + "Push sandbox complete.");
     }
 
     private void createLockFile(MapRFileSystem fs, Path lockFile) throws SandboxException {
@@ -141,60 +173,16 @@ public class SandboxAdmin {
         }
     }
 
-    private int _getReplicationBytesPending(String table) throws SandboxException {
-        ProcessedInput replicaStatusInput = new ProcessedInput(new String[] {
-                "table", "replica", "list",
-                "-path", table,
-                "-refreshnow", "true"
-        });
 
-        DbReplicaCommands replicaStatusCmd = null;
-        try {
-            replicaStatusCmd = (DbReplicaCommands) cmdFactory.getCLI(replicaStatusInput);
-        } catch (Exception e) {
-            throw new SandboxException("Could not retrieve repl bytes pending", e);
-        }
 
-        CommandOutput commandOutput = null;
-        try {
-            commandOutput = replicaStatusCmd.executeRealCommand();
-        } catch (CLIProcessingException e) {
-            e.printStackTrace(); // TODO proper error handling
-        }
-
-        JSONObject jsonOutput = null;
-        try {
-            jsonOutput = new JSONObject(commandOutput.toJSONString());
-            return jsonOutput.getJSONArray("data").getJSONObject(0).getInt("bytesPending");
-        } catch (JSONException e) {
-            throw new SandboxException("Could not retrieve repl bytes pending", e);
-        }
-    }
-
-    public void deleteSandbox(String sandboxTablePath) throws IOException {
+    public void deleteSandbox(String sandboxTablePath) throws IOException, SandboxException {
         // delete metadata file FIRST
         Path metadataFilePath = SandboxTableUtils.metafilePath(fs, sandboxTablePath);
         fs.delete(metadataFilePath, false);
 
         // deletes sandbox
-        SandboxAdminUtils.deleteTable(cmdFactory, sandboxTablePath);
-
+        SandboxAdminUtils.deleteTable(restClient, sandboxTablePath);
         recentSandboxManager.deleteIfNotExist(sandboxTablePath, fs);
-    }
-
-
-    @VisibleForTesting
-    SandboxAdmin() {
-        setupCommands();
-    }
-
-    public SandboxAdmin(Configuration configuration) {
-        setupCommands();
-        try {
-            fs = (MapRFileSystem) FileSystem.get(configuration);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
     }
 
     @VisibleForTesting
@@ -225,21 +213,13 @@ public class SandboxAdmin {
                     sandboxTablePath), e);
         }
 
-        SandboxAdminUtils.createSimilarTable(cmdFactory, sandboxTablePath, originalTablePath);
+        SandboxAdminUtils.createSimilarTable(restClient, sandboxTablePath, originalTablePath);
 
         // create metadata CF
-        SandboxAdminUtils.createTableCF(cmdFactory, sandboxTablePath, SandboxTable.DEFAULT_META_CF_NAME);
+        SandboxAdminUtils.createTableCF(restClient, sandboxTablePath, SandboxTable.DEFAULT_META_CF_NAME);
 
         // create dirty CF
-        SandboxAdminUtils.createTableCF(cmdFactory, sandboxTablePath, SandboxTable.DEFAULT_DIRTY_CF_NAME);
-    }
-
-    static void setupCommands() {
-        CLICommandRegistry.getInstance().register(DbCommands.tableCommands);
-        CLICommandRegistry.getInstance().register(DbCfCommands.cfCommands);
-        CLICommandRegistry.getInstance().register(DbReplicaCommands.replicaCommands);
-        CLICommandRegistry.getInstance().register(DbUpstreamCommands.upstreamCommands);
-        CLICommandRegistry.getInstance().register(SnapshotCommands.snapshotCommands);
+        SandboxAdminUtils.createTableCF(restClient, sandboxTablePath, SandboxTable.DEFAULT_DIRTY_CF_NAME);
     }
 
     public void info(String originalTablePath) throws IOException, SandboxException {
@@ -259,14 +239,4 @@ public class SandboxAdmin {
         return recentSandboxManager.getListFromFile();
     }
 
-    class CLIShim extends CLIBaseClass {
-        public CLIShim() {
-            super(null, null);
-        }
-
-        @Override
-        public CommandOutput executeRealCommand() throws CLIProcessingException {
-            return null; // not to be called
-        }
-    }
 }

@@ -1,212 +1,134 @@
 package com.mapr.db.sandbox.utils;
 
-import com.google.common.collect.Lists;
-import com.mapr.cli.*;
-import com.mapr.cliframework.base.CLICommandFactory;
-import com.mapr.cliframework.base.CommandOutput;
-import com.mapr.cliframework.base.ProcessedInput;
-import com.mapr.db.sandbox.SandboxTable;
-import com.mapr.fs.ErrnoException;
-import com.mapr.fs.MapRFileStatus;
+import com.mapr.db.sandbox.SandboxException;
 import com.mapr.fs.MapRFileSystem;
-import com.mapr.fs.proto.Dbserver;
+import com.mapr.rest.MapRRestClient;
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.apache.commons.math3.util.Pair;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.util.Pair;
+import org.codehaus.jettison.json.JSONArray;
+import org.codehaus.jettison.json.JSONException;
+import org.codehaus.jettison.json.JSONObject;
 
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.util.List;
 
 public class SandboxAdminUtils {
-    public static void printErrors(CommandOutput commandOutput) {
-        if (commandOutput != null) {
-            for (String msg : commandOutput.getOutput().getMessages()) {
-                System.err.println(msg);
-            }
+    private static final Log LOG = LogFactory.getLog(SandboxAdminUtils.class);
+
+    public static void createTableCF(MapRRestClient restClient, String tablePath, String cf) throws SandboxException {
+        final String urlPath =  String.format("/table/cf/create?path=%s&cfname=%s",
+                tablePath, cf);
+
+        try {
+            restClient.callCommand(urlPath, false);
+        } catch (SandboxException e) {
+            throw new SandboxException(String.format("Error creating CF in table path = %s, cf= %s",
+                    tablePath, cf), e);
         }
     }
 
-    public static void createTable(CLICommandFactory cmdFactory, String tablePath) {
-        ProcessedInput tableCreationInput = new ProcessedInput(new String[]{
-                "table", "create",
-                "-path", tablePath
-        });
+    public static void createSimilarTable(MapRRestClient restClient, String tablePath, String similarToTablePath) throws SandboxException {
+        StringBuilder sb = new StringBuilder(String.format("/table/create?path=%s", tablePath));
 
-        // Create table
-        CommandOutput commandOutput = null;
-        try {
-            DbCommands tableCreateCmd = (DbCommands) cmdFactory.getCLI(tableCreationInput);
-            commandOutput = tableCreateCmd.executeRealCommand();
-        } catch (Exception e) {
-            SandboxAdminUtils.printErrors(commandOutput);
-            e.printStackTrace(); // TODO handle properly
-        }
-    }
-
-    public static void createTableCF(CLICommandFactory cmdFactory, String tablePath, String cf) {
-        ProcessedInput input = new ProcessedInput(new String[] {
-                "table", "cf", "create",
-                "-path", tablePath,
-                "-cfname", cf
-        });
-
-        // Create column family
-        CommandOutput commandOutput = null;
-        try {
-            DbCfCommands cmd = (DbCfCommands) cmdFactory.getCLI(input);
-            commandOutput = cmd.executeRealCommand();
-        } catch (Exception e) {
-            SandboxAdminUtils.printErrors(commandOutput);
-            e.printStackTrace(); // TODO handle properly
-        }
-    }
-
-    public static void createSimilarTable(CLICommandFactory cmdFactory, String tablePath, String similarToTablePath) {
-        List<String> params = Lists.newArrayList(
-                "table", "create",
-                "-path", tablePath
-        );
-
-        if (similarToTablePath != null) {
-            params.addAll(Lists.<String>newArrayList(
-                    "-copymetafrom", similarToTablePath,
-                    "-copymetatype", "all"
-            ));
+        if (!StringUtils.isBlank(similarToTablePath)) {
+            sb.append("&copymetatype=all").append("&copymetafrom=").append(similarToTablePath);
         }
 
-        ProcessedInput input = new ProcessedInput(params.toArray(new String[params.size()]));
+        final String urlPath = sb.toString();
 
-        // Create sandbox table
-        CommandOutput commandOutput = null;
         try {
-            DbCommands cmd = (DbCommands) cmdFactory.getCLI(input);
-            commandOutput = cmd.executeRealCommand();
-        } catch (Exception e) {
-            e.printStackTrace(); // TODO handle properly
+            restClient.callCommand(urlPath, false);
+        } catch (SandboxException e) {
+            throw new SandboxException(String.format("Error creating table path = %s, similarTable = %s",
+                    tablePath, StringUtils.defaultIfBlank(similarToTablePath, "")), e);
         }
     }
 
 
-    public static void addTableReplica(CLICommandFactory cmdFactory, String fromTablePath, String toTablePath, boolean paused) {
-        ProcessedInput input = new ProcessedInput(new String[] {
-                "table", "replica", "add",
-                "-path", fromTablePath,
-                "-replica", toTablePath,
-                "-synchronous", "true",
-                "-paused", Boolean.toString(paused)
-        });
+    public static void addTableReplica(MapRRestClient restClient, String fromTablePath, String toTablePath, boolean paused) throws SandboxException {
+        final String urlPath =  String.format("/table/replica/add?path=%s&replica=%s&synchronous=true&paused=%s",
+                fromTablePath, toTablePath, Boolean.toString(paused));
 
-
-        // Add Replica Table
-        CommandOutput commandOutput = null;
         try {
-            DbReplicaCommands cmd = (DbReplicaCommands) cmdFactory.getCLI(input);
-            commandOutput = cmd.executeRealCommand();
-        } catch (Exception e) {
-            e.printStackTrace(); // TODO handle properly
+            restClient.callCommand(urlPath, false);
+        } catch (SandboxException e) {
+            throw new SandboxException(String.format("Error adding replica path = %s, replica = %s, paused = %s",
+                    fromTablePath, toTablePath, Boolean.toString(paused)), e);
         }
     }
 
-    public static void addUpstreamTable(CLICommandFactory cmdFactory, String toTablePath, String fromTablePath) {
-        ProcessedInput input = new ProcessedInput(new String[] {
-                "table", "upstream", "add",
-                "-path", toTablePath,
-                "-upstream", fromTablePath
-        });
+    public static void addUpstreamTable(MapRRestClient restClient, String toTablePath, String fromTablePath) throws SandboxException {
+        final String urlPath =  String.format("/table/upstream/add?path=%s&upstream=%s",
+                toTablePath, fromTablePath);
 
-        // Add Upstream Table
-        CommandOutput commandOutput = null;
         try {
-            DbUpstreamCommands cmd = (DbUpstreamCommands) cmdFactory.getCLI(input);
-            commandOutput = cmd.executeRealCommand();
-        } catch (Exception e) {
-            e.printStackTrace(); // TODO handle properly
+            restClient.callCommand(urlPath, false);
+        } catch (SandboxException e) {
+            throw new SandboxException(String.format("Error adding upstream in table path = %s with upstream = %s",
+                    toTablePath, fromTablePath), e);
         }
     }
 
-    public static void removeUpstreamTable(CLICommandFactory cmdFactory, String toTablePath, String fromTablePath) {
-        ProcessedInput input = new ProcessedInput(new String[] {
-                "table", "upstream", "remove",
-                "-path", toTablePath,
-                "-upstream", fromTablePath
-        });
+    public static void removeUpstreamTable(MapRRestClient restClient, String toTablePath, String fromTablePath) throws SandboxException {
+        final String urlPath =  String.format("/table/upstream/remove?path=%s&upstream=%s",
+                toTablePath, fromTablePath);
 
-        // Add Upstream Table
-        CommandOutput commandOutput = null;
         try {
-            DbUpstreamCommands cmd = (DbUpstreamCommands) cmdFactory.getCLI(input);
-            commandOutput = cmd.executeRealCommand();
-        } catch (Exception e) {
-            e.printStackTrace(); // TODO handle properly
+            restClient.callCommand(urlPath, false);
+        } catch (SandboxException e) {
+            throw new SandboxException(String.format("Error deleting upstream in table path = %s with upstream = %s",
+                    toTablePath, fromTablePath), e);
         }
     }
 
-    public static void deleteTable(CLICommandFactory cmdFactory, String tablePath) {
-        ProcessedInput input = new ProcessedInput(new String[] {
-                "table", "delete",
-                "-path", tablePath
-        });
+    public static void deleteTable(MapRRestClient restClient, String tablePath) throws SandboxException {
+        final String urlPath =  String.format("/table/delete?path=%s", tablePath);
 
-        CommandOutput commandOutput = null;
         try {
-            DbCommands cmd = (DbCommands) cmdFactory.getCLI(input);
-            commandOutput = cmd.executeRealCommand();
-        } catch (Exception e) {
-            SandboxAdminUtils.printErrors(commandOutput);
-            e.printStackTrace(); // TODO handle properly
+            restClient.callCommand(urlPath, false);
+        } catch (SandboxException e) {
+            throw new SandboxException(String.format("Error deleting table %s", tablePath), e);
         }
     }
 
-    public static void resumeReplication(CLICommandFactory cmdFactory, String fromTablePath, String toTablePath) {
-        ProcessedInput input = new ProcessedInput(new String[] {
-                "table", "replica", "resume",
-                "-path", fromTablePath,
-                "-replica", toTablePath
-        });
+    public static void resumeReplication(MapRRestClient restClient, String fromTablePath, String toTablePath) throws SandboxException {
+        final String urlPath =  String.format("/table/replica/resume?path=%s&replica=%s",
+                fromTablePath, toTablePath);
 
-        CommandOutput commandOutput = null;
         try {
-            DbReplicaCommands cmd = (DbReplicaCommands) cmdFactory.getCLI(input);
-            commandOutput = cmd.executeRealCommand();
-        } catch (Exception e) {
-            SandboxAdminUtils.printErrors(commandOutput);
-            e.printStackTrace(); // TODO handle properly
+            restClient.callCommand(urlPath, false);
+        } catch (SandboxException e) {
+            throw new SandboxException(String.format("Error resuming replication from path %s to replica %s",
+                    fromTablePath, toTablePath), e);
         }
     }
 
-    public static void pauseReplication(CLICommandFactory cmdFactory, String fromTablePath, String toTablePath) {
-        ProcessedInput input = new ProcessedInput(new String[] {
-                "table", "replica", "pause",
-                "-path", fromTablePath,
-                "-replica", toTablePath
-        });
+    public static void pauseReplication(MapRRestClient restClient, String fromTablePath, String toTablePath) throws SandboxException {
+        final String urlPath =  String.format("/table/replica/pause?path=%s&replica=%s",
+                fromTablePath, toTablePath);
 
-        CommandOutput commandOutput = null;
         try {
-            DbReplicaCommands cmd = (DbReplicaCommands) cmdFactory.getCLI(input);
-            commandOutput = cmd.executeRealCommand();
-        } catch (Exception e) {
-            SandboxAdminUtils.printErrors(commandOutput);
-            e.printStackTrace(); // TODO handle properly
+            restClient.callCommand(urlPath, false);
+        } catch (SandboxException e) {
+            throw new SandboxException(String.format("Error pausing replication from path %s to replica %s",
+                    fromTablePath, toTablePath), e);
         }
     }
 
-    public static void deleteCF(CLICommandFactory cmdFactory, String tablePath, String cfName) {
-        ProcessedInput input = new ProcessedInput(new String[] {
-                "table", "cf", "delete",
-                "-path", tablePath,
-                "-cfname", cfName
-        });
+    public static void deleteCF(MapRRestClient restClient, String tablePath, String cfName) throws SandboxException {
+        final String urlPath =  String.format("/table/cf/delete?path=%s&cfname=%s",
+                tablePath, cfName);
 
-        CommandOutput commandOutput = null;
         try {
-            DbCfCommands cmd = (DbCfCommands) cmdFactory.getCLI(input);
-            commandOutput = cmd.executeRealCommand();
-        } catch (Exception e) {
-            SandboxAdminUtils.printErrors(commandOutput);
-            e.printStackTrace(); // TODO handle properly
+            restClient.callCommand(urlPath, false);
+        } catch (SandboxException e) {
+            throw new SandboxException(String.format("Error deleting CF table = %s, cfname = %s",
+                    tablePath, cfName), e);
         }
     }
 
@@ -236,81 +158,98 @@ public class SandboxAdminUtils {
 
     /**
      * Returns volume Name and volume mount path for the volume where a given file lives
-     * @param fs
+     * @param restClient the rest client
      * @param path path
-     * @return
+     * @return a pair with volume name and mount path
      * @throws IOException
      */
-    public static Pair<String,Path> getVolumeInfoForPath(MapRFileSystem fs, Path path) throws IOException {
-        final Path rootDfsPath = new Path("/");
-
+    public static Pair<String,Path> getVolumeInfoForPath(MapRRestClient restClient, Path path) throws IOException, SandboxException {
         String volumeName = "mapr.cluster.root";
         Path currentPath =  path;
-        while (!currentPath.equals(rootDfsPath)) {
-            MapRFileStatus stat = fs.getMapRFileStatus(currentPath);
+        while (currentPath.depth() > 0) {
+            String name = volumeInfo(restClient, currentPath);
 
-            if (stat.isVol()) {
-                volumeName = stat.getVolumeInfo().name;
+            if (name != null) {
+                volumeName = name;
+                break;
             }
 
             currentPath = currentPath.getParent();
         }
 
-        return Pair.newPair(volumeName, currentPath);
+        return new Pair<String, Path>(volumeName, currentPath);
     }
 
-    public static void createSnapshot(CLICommandFactory cmdFactory, String volumeName, String snapshotName) {
-        ProcessedInput input = new ProcessedInput(new String[] {
-                "snapshot", "create",
-                "-snapshotname", snapshotName,
-                "-volume", volumeName
-        });
+    public static void createSnapshot(MapRRestClient restClient, String volumeName, String snapshotName) throws SandboxException {
+        final String urlPath =  String.format("/volume/snapshot/create?volume=%s&snapshotname=%s",
+                volumeName, snapshotName);
 
         try {
-            SnapshotCommands cmd = (SnapshotCommands) cmdFactory.getCLI(input);
-            cmd.executeRealCommand();
-        } catch (Exception e) {
-            e.printStackTrace(); // TODO handle properly
+            restClient.callCommand(urlPath, false);
+        } catch (SandboxException e) {
+            throw new SandboxException(String.format("Error creating snapshot volume = %s, snapshotname = %s",
+                    volumeName, snapshotName), e);
         }
     }
 
-    public static void removeSnapshot(CLICommandFactory cmdFactory, String volumeName, String snapshotName) {
-        ProcessedInput input = new ProcessedInput(new String[] {
-                "snapshot", "remove",
-                "-snapshotname", snapshotName,
-                "-volume", volumeName
-        });
+    public static void removeSnapshot(MapRRestClient restClient, String volumeName, String snapshotName) throws SandboxException {
+        final String urlPath =  String.format("/volume/snapshot/remove?volume=%s&snapshotname=%s",
+                volumeName, snapshotName);
 
         try {
-            SnapshotCommands cmd = (SnapshotCommands) cmdFactory.getCLI(input);
-            cmd.executeRealCommand();
-        } catch (Exception e) {
-            e.printStackTrace(); // TODO handle properly
+            restClient.callCommand(urlPath, false);
+        } catch (SandboxException e) {
+            throw new SandboxException("Error removing snapshot", e);
         }
     }
 
-    public static void lockEditsForTable(MapRFileSystem fs, String tablePathStr) throws IOException {
-        Path tablePath = new Path(tablePathStr);
-        List<Dbserver.ColumnFamilyAttr> cfAttrs = fs.listColumnFamily(tablePath, false);
+    public static void lockEditsForTable(MapRRestClient restClient, String tablePath, String cf) throws SandboxException {
+        final String urlPath =  String.format("/table/cf/edit?path=%s&cfname=%s&writeperm=",
+                tablePath, cf);
 
-        for (Dbserver.ColumnFamilyAttr cfAttr : cfAttrs) {
-            Dbserver.ColumnFamilyAttr.Builder builder = cfAttr.toBuilder();
-            final String cfName = cfAttr.getSchFamily().getName();
-            if (!cfName.equals(SandboxTable.DEFAULT_META_CF_NAME) &&
-                    !cfName.equals(SandboxTable.DEFAULT_DIRTY_CF_NAME)) {
+        try {
+            restClient.callCommand(urlPath, false);
+        } catch (SandboxException e) {
+            throw new SandboxException(String.format("Error locking CF %s on table %s ", cf, tablePath), e);
+        }
+    }
 
-                Dbserver.AccessControlExpression writePermAce = Dbserver.AccessControlExpression.newBuilder()
-                        .setAccessType(Dbserver.DBAccessType.FamilyWriteData)
-                        .build();
+    private static String volumeInfo(MapRRestClient restClient, Path path) throws SandboxException {
+        final String urlPath =  String.format("/volume/info?path=%s&columns=volumename", path.toString());
 
-                Dbserver.ColumnFamilyAttr.newBuilder().clearAces().addAces(writePermAce);
+        try {
+            JSONObject result = restClient.callCommand(urlPath, true);
+            JSONArray data = result.has("data") ? result.getJSONArray("data") : null;
 
-                try {
-                    fs.modifyColumnFamily(tablePath, cfName, builder.build());
-                } catch (ErrnoException e) {
-                    e.printStackTrace();
-                }
+            if (data != null) {
+                return data.getJSONObject(0).getString("volumename");
             }
+        } catch (SandboxException e) {
+            throw new SandboxException("Error getting volume info for path " + path.toString(), e);
+        } catch (JSONException e) {
+            throw new SandboxException("Error parsing volume info for path " + path.toString(), e);
+        }
+
+        return null;
+    }
+
+    public static int replicationBytesPending(MapRRestClient restClient, String tablePath) throws SandboxException {
+        // TODO columns = bytesPending ?
+        final String urlPath =  String.format("/table/replica/list?path=%s&refreshnow=true", tablePath);
+
+        try {
+            JSONObject result = restClient.callCommand(urlPath, true);
+            JSONArray data = result.has("data") ? result.getJSONArray("data") : null;
+
+            if (data != null) {
+                return data.getJSONObject(0).getInt("bytesPending");
+            }
+
+            throw new SandboxException("Error getting replication bytes pending for table " + tablePath, null);
+        } catch (SandboxException e) {
+            throw new SandboxException("Error getting replication bytes pending for table " + tablePath, e);
+        } catch (JSONException e) {
+            throw new SandboxException("Error parsing replication bytes pending for table " + tablePath, e);
         }
     }
 }

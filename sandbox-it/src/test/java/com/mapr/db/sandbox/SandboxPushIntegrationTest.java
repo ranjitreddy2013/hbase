@@ -2,10 +2,10 @@ package com.mapr.db.sandbox;
 
 import com.google.common.collect.Lists;
 import com.mapr.db.sandbox.utils.SandboxAdminUtils;
+import org.apache.commons.math3.util.Pair;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.ResultScanner;
-import org.apache.hadoop.hbase.util.Pair;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -19,13 +19,16 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 public class SandboxPushIntegrationTest extends BaseSandboxIntegrationTest {
+
     @Ignore
     @Test
-    public void testPreventSandboxEditing() throws IOException {
+    public void testPreventSandboxEditing() throws IOException, SandboxException, InterruptedException {
         setCellValue(hTableSandbox, newRowId, CF1, COL1, "initial val");
         setCellValue(hTableSandbox, newRowId, CF2, COL1, "initial val");
 
-        SandboxAdminUtils.lockEditsForTable(fs, sandboxTablePath);
+        SandboxAdminUtils.lockEditsForTable(restClient, sandboxTablePath, CF1_NAME);
+
+        Thread.sleep(1000L); // sometime it takes time for locks to be applied
 
         boolean thrown = false;
         try {
@@ -166,7 +169,7 @@ public class SandboxPushIntegrationTest extends BaseSandboxIntegrationTest {
 
         sandboxAdmin.pushSandbox(sandboxPath2, true, false);
 
-        Pair<String, Path> volumeInfo = SandboxAdminUtils.getVolumeInfoForPath(fs, new Path(originalTablePath));
+        Pair<String, Path> volumeInfo = SandboxAdminUtils.getVolumeInfoForPath(restClient, new Path(originalTablePath));
         String volumeName = volumeInfo.getFirst();
         String volumeMountPath = volumeInfo.getSecond().toString();
         String origTableRelativeVolumePath = originalTablePath.substring(volumeMountPath.length());
@@ -190,9 +193,39 @@ public class SandboxPushIntegrationTest extends BaseSandboxIntegrationTest {
         assertEquals("table should have initial cell", 1L, countCells(origResults));
 
         // cleanup the snapshot
-        SandboxAdminUtils.removeSnapshot(cmdFactory, volumeName, snapshotName);
+        SandboxAdminUtils.removeSnapshot(restClient, volumeName, snapshotName);
     }
 
-    // TODO add test where original is filled, and matching cell is updated in original before push (should mantain) the new value
-    // TODO depends on Force push
+    @Ignore
+    @Test
+    public void testForcedPush() throws IOException, SandboxException {
+        // add a value to the original
+        setCellValue(hTableOriginal, newRowId, CF2, COL1, "initial val");
+
+        ResultScanner origResults, sandResults;
+        origResults = hTableOriginal.getScanner(scan);
+        sandResults = hTableSandbox.getScanner(scan);
+        assertEquals("table should have initial cell", 1L, countCells(origResults));
+        assertEquals("table should have initial cell", 1L, countCells(sandResults));
+
+        // add cell to sandbox
+        setCellValue(hTableSandbox, newRowId, CF1, COL1, "ts1");
+        sandResults = hTableSandbox.getScanner(scan);
+        assertEquals("table should have initial cell + added one", 2L, countCells(sandResults));
+
+        // TODO do same test without push until here and then change verify block below:
+        // re-write same cell in original (ts will be > than sandbox cell ts)
+        setCellValue(hTableOriginal, newRowId, CF1, COL1, "ts2");
+        sandboxAdmin.createEmptySandboxTable(sandboxTablePath+"2", originalTablePath);
+        sandboxAdmin.pushSandbox(sandboxTablePath, false, true);
+
+        origResults = hTableOriginal.getScanner(scan);
+        sandResults = hTableSandbox.getScanner(scan);
+        assertEquals("table should have both 2 cells", 2L, countCells(origResults));
+        assertEquals("table should have both 2 cells", 2L, countCells(sandResults));
+        assertEquals("sandbox version should be the final one", "ts1",
+                getCellValue(hTableOriginal, newRowId, CF1, COL1));
+
+
+    }
 }

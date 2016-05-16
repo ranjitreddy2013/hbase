@@ -2130,6 +2130,9 @@
       <properties>
         <surefire.skipFirstPart>true</surefire.skipFirstPart>
         <surefire.skipSecondPart>true</surefire.skipSecondPart>
+        <mapr.version>5.0.0-mapr</mapr.version>
+        <hadoop-two.version>2.7.0-mapr-1506</hadoop-two.version>
+        <argLine>-Djava.library.path=/opt/mapr/lib</argLine>
       </properties>
       <modules>
         <module>sandbox-admin-api</module>

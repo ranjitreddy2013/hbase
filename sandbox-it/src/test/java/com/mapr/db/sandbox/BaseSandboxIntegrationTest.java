@@ -1,10 +1,9 @@
 package com.mapr.db.sandbox;
 
-import com.mapr.cliframework.base.CLICommandFactory;
 import com.mapr.fs.MapRFileSystem;
-import com.mapr.cliframework.base.CLICommandFactory;
 import com.mapr.db.sandbox.utils.SandboxAdminUtils;
 import com.mapr.fs.MapRFileSystem;
+import com.mapr.rest.MapRRestClient;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -38,16 +37,19 @@ public abstract class BaseSandboxIntegrationTest {
     protected static HBaseAdmin hba;
     protected static MapRFileSystem fs;
     protected static SandboxAdmin sandboxAdmin;
-    protected static CLICommandFactory cmdFactory;
+    protected static MapRRestClient restClient;
 
     static {
         conf = new Configuration();
         try {
             hba = new HBaseAdmin(conf);
             fs = (MapRFileSystem) FileSystem.get(conf);
-            cmdFactory = CLICommandFactory.getInstance();
+            // TODO grab this from configuration
+            restClient = new MapRRestClient("localhost:8443", "mapr", "mapr");
             sandboxAdmin = new SandboxAdmin(conf);
         } catch (IOException e) {
+            e.printStackTrace();
+        } catch (SandboxException e) {
             e.printStackTrace();
         }
     }
@@ -97,15 +99,15 @@ public abstract class BaseSandboxIntegrationTest {
     }
 
     @After
-    public void cleanupSandboxTable() throws IOException {
+    public void cleanupSandboxTable() throws IOException, SandboxException {
         // delete sandbox table if it still exists
         if (fs.exists(new Path(sandboxTablePath))) {
             sandboxAdmin.deleteSandbox(sandboxTablePath);
         }
 
         // delete original table and cleanup test directory
-        SandboxAdminUtils.deleteTable(cmdFactory, originalTablePath);
-        SandboxAdminUtils.deleteTable(cmdFactory, mimicTablePath);
+        SandboxAdminUtils.deleteTable(restClient, originalTablePath);
+        SandboxAdminUtils.deleteTable(restClient, mimicTablePath);
 
         // recursive = true  because proxy tables might still exist
         // TODO we might need to address this

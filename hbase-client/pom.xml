@@ -303,8 +303,34 @@
     <profile>
       <id>philips-sandbox</id>
 
+      <dependencies>
+        <dependency>
+        <groupId>org.apache.hadoop</groupId>
+        <artifactId>hadoop-common</artifactId>
+        <exclusions>
+          <exclusion>
+            <groupId>com.mapr.hadoop</groupId>
+            <artifactId>maprfs</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>org.apache.hbase</groupId>
+            <artifactId>hbase-server</artifactId>
+          </exclusion>
+        </exclusions>
+        </dependency>
+
+        <dependency>
+          <groupId>com.mapr.hadoop</groupId>
+          <artifactId>maprfs</artifactId>
+          <version>${mapr.version}</version>
+          <scope>system</scope>
+          <systemPath>/opt/mapr/lib/maprfs-5.0.0-mapr.jar</systemPath>
+        </dependency>
+      </dependencies>
+
       <properties>
         <hbase.skip-jacoco>false</hbase.skip-jacoco>
+        <mapr.version>5.0.0-mapr</mapr.version>
       </properties>
 
       <build>
