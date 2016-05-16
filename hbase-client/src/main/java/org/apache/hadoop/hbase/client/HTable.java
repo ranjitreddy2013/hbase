@@ -229,15 +229,17 @@ public class HTable implements HTableInterface {
     try {
       EnumMap<SandboxTable.InfoType, String> info = SandboxTableUtils.readSandboxInfo(mfs, table);
 
-      String originalTablePath = SandboxTableUtils
-              .pathFromFid(mfs, info.get(SandboxTable.InfoType.ORIGINAL_FID))
-              .toUri().toString();
+      if (info != null) {
+        String originalTablePath = SandboxTableUtils
+                .pathFromFid(mfs, info.get(SandboxTable.InfoType.ORIGINAL_FID))
+                .toUri().toString();
 
-      AbstractHTable originalTable = initIfMapRTable(conf,
-              TableName.valueOf(originalTablePath));
-      String proxyFid = info.get(SandboxTable.InfoType.PROXY_FID);
+        AbstractHTable originalTable = initIfMapRTable(conf,
+                TableName.valueOf(originalTablePath));
+        String proxyFid = info.get(SandboxTable.InfoType.PROXY_FID);
 
-      this.sandboxTable = new SandboxTable(table, originalTable, proxyFid);
+        this.sandboxTable = new SandboxTable(table, originalTable, proxyFid);
+      }
     } catch (Exception ex) {
       LOG.error("Error creating original table representation", ex);
     }

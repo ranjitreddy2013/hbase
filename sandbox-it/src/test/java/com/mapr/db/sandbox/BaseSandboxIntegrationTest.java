@@ -21,19 +21,23 @@ import java.io.IOException;
 public abstract class BaseSandboxIntegrationTest {
 	static final String CF1_NAME = "cf1";
 	static final String CF2_NAME = "cf2";
-	static final String CF3_NAME = "cf3";
 	static final byte[] CF1 = CF1_NAME.getBytes();
 	static final byte[] CF2 = CF2_NAME.getBytes();
-	static final byte[] CF3 = CF3_NAME.getBytes();
 
+	
+	static final String COL1_NAME = "col_x";
+	static final String COL2_NAME = "col_y";
+	static final byte[] COL1 = COL1_NAME.getBytes();
+	static final byte[] COL2 = COL2_NAME.getBytes();
 
     // TODO load from settings as env specific
-    static String TABLE_PREFIX = "/philips_sandbox_it_tmp/";
-
+	final static String TABLE_PREFIX = "changethis";//TODO delete this
+	final static String TEST_WORKING_DIR_PREFIX = "/philips_sandbox_it_tmp/";
 
     protected static Configuration conf;
     protected static HBaseAdmin hba;
     protected static MapRFileSystem fs;
+    protected static SandboxAdmin sandboxAdmin;
     protected static CLICommandFactory cmdFactory;
 
     static {
@@ -42,26 +46,22 @@ public abstract class BaseSandboxIntegrationTest {
             hba = new HBaseAdmin(conf);
             fs = (MapRFileSystem) FileSystem.get(conf);
             cmdFactory = CLICommandFactory.getInstance();
+            sandboxAdmin = new SandboxAdmin(conf);
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-
-    protected static SandboxAdmin sandboxAdmin;
+    protected String testWorkingDir;
 
     protected String originalTablePath;
+    protected String mimicTablePath;
     protected String sandboxTablePath;
 
     protected HTable hTableOriginal;
     protected HTable hTableSandbox;
+    protected HTable hTableMimic;
 
-    protected static void assureWorkingDirExists() throws IOException {
-        Path tableDirPath = new Path(TABLE_PREFIX);
-        if (!fs.exists(tableDirPath)) {
-            fs.mkdirs(tableDirPath);
-        }
-    }
 
     private static String randomName() {
         return Long.toHexString(Double.doubleToLongBits(Math.random()));
@@ -69,26 +69,31 @@ public abstract class BaseSandboxIntegrationTest {
 
     @Before
     public void setupTest() throws SandboxException, IOException {
-        TABLE_PREFIX += randomName();
+        testWorkingDir = TEST_WORKING_DIR_PREFIX + randomName();
+        SandboxTestUtils.assureWorkingDirExists(fs,testWorkingDir);
 
-        assureWorkingDirExists();
+        // create original table
+        originalTablePath = String.format("%s/%s", testWorkingDir, "table");
+        HTableDescriptor origTableDesc = new HTableDescriptor(TableName.valueOf(originalTablePath));
+        origTableDesc.addFamily(new HColumnDescriptor(CF1_NAME));
+        origTableDesc.addFamily(new HColumnDescriptor(CF2_NAME));
+        hba.createTable(origTableDesc);
 
-        // create original
-        sandboxAdmin = new SandboxAdmin(new Configuration());
-        originalTablePath = String.format("%s/%s", TABLE_PREFIX, "table");
+        // create mimic table
+        mimicTablePath = String.format("%s/%s", testWorkingDir, "mimic");
+        HTableDescriptor mimicTableDesc = new HTableDescriptor(TableName.valueOf(mimicTablePath));
+        mimicTableDesc.addFamily(new HColumnDescriptor(CF1_NAME));
+        mimicTableDesc.addFamily(new HColumnDescriptor(CF2_NAME));
+        hba.createTable(mimicTableDesc);
 
-        HTableDescriptor tableDescriptor = new HTableDescriptor(TableName.valueOf(originalTablePath));
-        tableDescriptor.addFamily(new HColumnDescriptor(CF1_NAME));
-        tableDescriptor.addFamily(new HColumnDescriptor(CF2_NAME));
-        tableDescriptor.addFamily(new HColumnDescriptor(CF3_NAME));
-        hba.createTable(tableDescriptor);
-
-        // sandbox
+        // create sandbox
         sandboxTablePath = String.format("%s_sand", originalTablePath);
         sandboxAdmin.createSandbox(sandboxTablePath, originalTablePath);
 
+        // initialize handlers
         hTableOriginal = new HTable(conf, originalTablePath);
         hTableSandbox = new HTable(conf, sandboxTablePath);
+        hTableMimic = new HTable(conf, mimicTablePath);
     }
 
     @After
@@ -100,8 +105,39 @@ public abstract class BaseSandboxIntegrationTest {
 
         // delete original table and cleanup test directory
         sandboxAdmin.deleteTable(originalTablePath);
+        sandboxAdmin.deleteTable(mimicTablePath);
 
         // recursive = true  because proxy tables might still exist
-        fs.delete(new Path(TABLE_PREFIX), true);
+        // TODO we might need to address this
+        fs.delete(new Path(testWorkingDir), true);
+    }
+
+    protected final byte[] existingRowId = "row1".getBytes();
+    protected final byte[] newRowId = "row30".getBytes();
+
+    protected void loadData(HTable hTable) throws InterruptedIOException, RetriesExhaustedWithDetailsException {
+        for (int i = 0; i < 20; i++) {
+            byte[] rowId = String.format("row%d", i).getBytes();
+            Put put = new Put(rowId);
+            put.add(CF1, COL1, Integer.toString(i).getBytes());
+            put.add(CF2, COL2, "someString".getBytes());
+            hTable.put(put);
+        }
+
+        hTable.flushCommits();
+    }
+
+    protected void fillOriginalTable() {
+        try {
+            loadData(hTableOriginal);
+            loadData(hTableMimic);
+        } catch (Exception e) {
+            e.printStackTrace();
+            // TODO do something about it
+        }
+    }
+
+    protected void pushSandbox() throws IOException, SandboxException {
+        sandboxAdmin.pushSandbox(sandboxTablePath, true);
     }
 }

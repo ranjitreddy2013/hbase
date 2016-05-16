@@ -49,32 +49,30 @@ public class SandboxTableUtils {
     }
 
     public static EnumMap<SandboxTable.InfoType, String> readSandboxInfo(MapRFileSystem fs, AbstractHTable sandboxHTable) throws IOException {
-        String shadowTablePath = new String(sandboxHTable.getTableName(), StandardCharsets.UTF_8);
-        return readSandboxInfo(fs, shadowTablePath);
+        String sandboxTablePath = new String(sandboxHTable.getTableName(), StandardCharsets.UTF_8);
+        return readSandboxInfo(fs, sandboxTablePath);
     }
 
-    public static EnumMap<SandboxTable.InfoType, String> readSandboxInfo(MapRFileSystem fs, String shadowTablePath) throws IOException {
-        Path metaFilePath = metafilePath(fs, shadowTablePath);
+    public static EnumMap<SandboxTable.InfoType, String> readSandboxInfo(MapRFileSystem fs, String sandboxTablePath) throws IOException {
+        Path metaFilePath = metafilePath(fs, sandboxTablePath);
 
         EnumMap<SandboxTable.InfoType, String> info = Maps.newEnumMap(SandboxTable.InfoType.class);
 
         if (fs.exists(metaFilePath)) {
-            // parse shadow file
+            // parse sandbox metadata file
             try {
                 BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(metaFilePath)));
 
                 info.put(SandboxTable.InfoType.ORIGINAL_FID, br.readLine());
                 info.put(SandboxTable.InfoType.PROXY_FID, br.readLine());
+                return info;
             } catch (IOException ex) {
-                throw new IOException(String.format("Error reading/parsing metadata file for shadow table %s",
-                        shadowTablePath), ex);
+                throw new IOException(String.format("Error reading/parsing metadata file for sandbox table %s",
+                        sandboxTablePath), ex);
             }
-        } else {
-            throw new IOException(String.format("Could not find metadata file for table %s ( expected path = %s)",
-                    shadowTablePath, metaFilePath.toUri().toString()));
         }
 
-        return info;
+        return null;
     }
 
 

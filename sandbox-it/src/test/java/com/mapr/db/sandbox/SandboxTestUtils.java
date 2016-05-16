@@ -1,12 +1,13 @@
 package com.mapr.db.sandbox;
 
+import com.mapr.fs.MapRFileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.Cell;
-import org.apache.hadoop.hbase.client.HTableInterface;
-import org.apache.hadoop.hbase.client.Result;
-import org.apache.hadoop.hbase.client.ResultScanner;
+import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -41,5 +42,41 @@ public class SandboxTestUtils {
             }
         }
         return result;
+    }
+
+    public static int countTrue(Boolean[] results) {
+        int i = 0;
+        for (Boolean result : results) {
+            if (result) {
+                ++i;
+            }
+        }
+        return i;
+    }
+
+    public static void assureWorkingDirExists(MapRFileSystem fs, String tablePrefix) throws IOException {
+        Path tableDirPath = new Path(tablePrefix);
+        if (!fs.exists(tableDirPath)) {
+            fs.mkdirs(tableDirPath);
+        }
+    }
+
+    public static String getCellValue(HTable hTable, byte[] rowId, byte[] columnFamily, byte[] columnQualifier) throws IOException {
+        Get get = new Get(rowId);
+        return Bytes.toString(hTable.get(get).getValue(columnFamily, columnQualifier));
+    }
+
+    public static void setCellValue(HTable hTable, byte[] rowId, byte[] columnFamily, byte[] columnQualifier, String value) throws InterruptedIOException, RetriesExhaustedWithDetailsException {
+        Put put = new Put(rowId);
+        put.add(columnFamily, columnQualifier, Bytes.toBytes(value));
+        hTable.put(put);
+        hTable.flushCommits();
+    }
+
+    public static void delCell(HTable hTable, byte[] rowId, byte[] columnFamily, byte[] columnQualifier) throws IOException {
+        Delete delete = new Delete(rowId);
+        delete.deleteColumn(columnFamily, columnQualifier);
+        hTable.delete(delete);
+        hTable.flushCommits();
     }
 }

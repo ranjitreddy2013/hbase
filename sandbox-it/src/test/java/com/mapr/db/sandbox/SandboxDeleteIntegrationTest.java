@@ -37,5 +37,4 @@ public class SandboxDeleteIntegrationTest extends BaseSandboxIntegrationTest {
         assertEquals("sandbox table deleted", hba.tableExists(sandboxTablePath), false);
         assertEquals("sandbox meta file deleted", fs.exists(sandboxMetaPath), false);
     }
-
 }

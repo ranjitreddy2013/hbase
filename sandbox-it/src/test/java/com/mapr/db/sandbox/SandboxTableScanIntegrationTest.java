@@ -1,196 +1,208 @@
 package com.mapr.db.sandbox;
 
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HBaseConfiguration;
-import org.apache.hadoop.hbase.HColumnDescriptor;
-import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.TableName;
-import org.apache.hadoop.hbase.client.*;
-import org.apache.hadoop.hbase.KeyValue;
-import org.apache.hadoop.hbase.util.Bytes;
-
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.ResultScanner;
+import org.apache.hadoop.hbase.client.Scan;
 import org.junit.Test;
-import static org.junit.Assert.*;
-
-import static com.mapr.db.sandbox.SandboxTestUtils.countCells;
-import static com.mapr.db.sandbox.SandboxTestUtils.countRows;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.ArrayList;
+
+import static com.mapr.db.sandbox.SandboxTestUtils.*;
+import static org.junit.Assert.assertEquals;
 
 public class SandboxTableScanIntegrationTest extends BaseSandboxIntegrationTest {
+    Scan scan = new Scan();
+    Scan scanCF1 = new Scan();
+    Scan scanCF2 = new Scan();
 
-    protected static Configuration conf = HBaseConfiguration.create();
-    protected static String productionTablePath;
-    protected static String sandboxTablePath;
-
-    protected static HTable hTableProduction;
-    protected static HTable hTableSandbox;
-
-    @BeforeClass
-    public static void createProductionTable() throws IOException {
-        assureWorkingDirExists();
-        hba = new HBaseAdmin(conf);
-        String productionTableName = Long.toHexString(Double.doubleToLongBits(Math.random()));
-        productionTablePath = String.format("%s%s", TABLE_PREFIX, productionTableName);
-        HTableDescriptor tableDescriptor = new HTableDescriptor(TableName.valueOf(productionTablePath));
-        tableDescriptor.addFamily(new HColumnDescriptor("cf1"));
-        tableDescriptor.addFamily(new HColumnDescriptor("cf2"));
-        tableDescriptor.addFamily(new HColumnDescriptor("cf3"));
-        hba.createTable(tableDescriptor);
-
-        // insert some data to production
-        hTableProduction = new HTable(conf, productionTablePath);
-        for (int i = 0; i < 25; i++) {
-          Put put = new Put(Bytes.toBytes(Integer.toString(i)));
-          put.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(i)));
-          put.add(Bytes.toBytes("cf1"), Bytes.toBytes("col2"), Bytes.toBytes(Integer.toString(i)));
-          put.add(Bytes.toBytes("cf2"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(i)));
-          put.add(Bytes.toBytes("cf3"), Bytes.toBytes("col3"), Bytes.toBytes(Integer.toString(i)));
-          hTableProduction.put(put);
-        }
-        hTableProduction.flushCommits();
+    public SandboxTableScanIntegrationTest() {
+        scanCF1.addFamily(CF1);
+        scanCF2.addFamily(CF2);
     }
+
+    @Test
+    public void testScanForEmptyOriginal() throws IOException, SandboxException {
+        // scan all rows and count
+        ResultScanner origResults, sandResults, mimicResults;
+
+        origResults = hTableOriginal.getScanner(scan);
+        sandResults = hTableSandbox.getScanner(scan);
+        mimicResults = hTableMimic.getScanner(scan);
+        assertEquals("original table should have no rows", 0L, countRows(origResults));
+        assertEquals("sandbox table should have no rows", 0L, countRows(sandResults));
+        assertEquals("mimic table should have no rows", 0L, countRows(mimicResults));
+
+        // insert on sandbox / mimic on multiple CFs
+        setCellValue(hTableSandbox, newRowId, CF1, COL1, "v1");
+        setCellValue(hTableSandbox, newRowId, CF1, COL2, "v2");
+        setCellValue(hTableSandbox, newRowId, CF2, COL1, "v3");
+        setCellValue(hTableSandbox, newRowId, CF2, COL2, "v4");
+        setCellValue(hTableSandbox, existingRowId, CF2, COL2, "v5");
+
+        // repeat for mimic table
+        setCellValue(hTableMimic, newRowId, CF1, COL1, "v1");
+        setCellValue(hTableMimic, newRowId, CF1, COL2, "v2");
+        setCellValue(hTableMimic, newRowId, CF2, COL1, "v3");
+        setCellValue(hTableMimic, newRowId, CF2, COL2, "v4");
+        setCellValue(hTableMimic, existingRowId, CF2, COL2, "v5");
+
+        origResults = hTableOriginal.getScanner(scan);
+        sandResults = hTableSandbox.getScanner(scan);
+        mimicResults = hTableMimic.getScanner(scan);
+
+        assertEquals("original table should have no rows", 0L, countRows(origResults));
+        assertEquals("mimic table should have a new row", 2L, countRows(mimicResults));
+        assertEquals("sandbox table should have a new row", 2L, countRows(sandResults));
+
+        // results fetched because iterating thru results for counting alters result object state
+        sandResults = hTableSandbox.getScanner(scan);
+        mimicResults = hTableMimic.getScanner(scan);
+        assertEquals("mimic table should have all new cells", 5L, countCells(mimicResults));
+        assertEquals("sandbox table should have all new cells", 5L, countCells(sandResults));
+
+        // Scan specifying one CF
+        origResults = hTableOriginal.getScanner(scanCF1);
+        sandResults = hTableSandbox.getScanner(scanCF1);
+        mimicResults = hTableMimic.getScanner(scanCF1);
+
+        assertEquals("original table should have no rows", 0L, countRows(origResults));
+        assertEquals("mimic table should have a new row", 1L, countRows(mimicResults));
+        assertEquals("sandbox table should have a new row", 1L, countRows(sandResults));
+
+        // results fetched because iterating thru results for counting alters result object state
+        sandResults = hTableSandbox.getScanner(scanCF1);
+        mimicResults = hTableMimic.getScanner(scanCF1);
+        assertEquals("mimic table should have all new cells", 2L, countCells(mimicResults));
+        assertEquals("sandbox table should have all new cells", 2L, countCells(sandResults));
+
+
+        // delete some row columns from sandbox
+        delCell(hTableSandbox, newRowId, CF1, COL1);
+        delCell(hTableMimic, newRowId, CF1, COL1);
+
+        verifyFinalState(hTableSandbox);
+        verifyFinalState(hTableMimic);
+
+        pushSandbox();
+
+        verifyFinalState(hTableOriginal);
+    }
+
+    private void verifyFinalState(HTable hTable) throws IOException {
+        ResultScanner result,resultSelectiveCF;
+
+        result = hTable.getScanner(scan);
+        assertEquals("table should have a new row", 2L, countRows(result));
+        result = hTable.getScanner(scan);
+        assertEquals("table should have all new cells except deleted", 4L, countCells(result));
+
+        resultSelectiveCF = hTable.getScanner(scanCF1);
+        assertEquals("table should have a new row with selected CF", 1L, countRows(resultSelectiveCF));
+
+        resultSelectiveCF = hTable.getScanner(scanCF1);
+        assertEquals("table should have all cells from selected CF (except deleted)", 1L, countCells(resultSelectiveCF));
+    }
+
+    // TODO repeat same thing for filled original table (inserts and deletes beginning, middle and end)
 
 
     @Test
-    public void testSandboxScan() throws IOException, SandboxException, Exception {
+    public void testScanForFilledOriginal() throws IOException, SandboxException {
+        loadData(hTableOriginal);
+        loadData(hTableMimic);
 
-      String sandboxTablePath = String.format("%s_new_sand", productionTablePath);
-      String sandboxTableMetaFile = String.format("%s_new_meta", sandboxTablePath);
-      sandboxAdmin.createSandbox(sandboxTablePath, productionTablePath);
-      hTableSandbox = new HTable(conf, sandboxTablePath);
+        // scan all rows and count
+        ResultScanner origResults, sandResults, mimicResults;
 
-      // add some additional data to sandbox
-      for (int i = 25; i < 35; i++) {
-        Put put = new Put(Bytes.toBytes(Integer.toString(i)));
-        put.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(i)));
-        put.add(Bytes.toBytes("cf1"), Bytes.toBytes("col2"), Bytes.toBytes(Integer.toString(i)));
-        put.add(Bytes.toBytes("cf2"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(i)));
-        put.add(Bytes.toBytes("cf3"), Bytes.toBytes("col3"), Bytes.toBytes(Integer.toString(i)));
-        put.add(Bytes.toBytes("cf4"), Bytes.toBytes("col2"), Bytes.toBytes(Integer.toString(i)));
-        hTableSandbox.put(put);
-      }
-      hTableSandbox.flushCommits();
+        origResults = hTableOriginal.getScanner(scan);
+        sandResults = hTableSandbox.getScanner(scan);
+        mimicResults = hTableMimic.getScanner(scan);
+        assertEquals("original table should have rows", 20L, countRows(origResults));
+        assertEquals("sandbox table should return rows", 20L, countRows(sandResults));
+        assertEquals("mimic table should have rows", 20L, countRows(mimicResults));
 
-      // scan all rows and count
-      Scan s = new Scan();
-      ResultScanner resultProductionScanner = hTableProduction.getScanner(s);
-      ResultScanner resultSandboxScanner = hTableSandbox.getScanner(s);
-      assertEquals("production should have the 25 scanner rows", countRows(resultProductionScanner), 25L);
-      assertEquals("sandbox should have the 35 scanner rows", countRows(resultSandboxScanner), 35L);
-
-      // scan a specific range of rows
-      s = new Scan(Bytes.toBytes(Integer.toString(11)), Bytes.toBytes(Integer.toString(20)));
-      resultProductionScanner = hTableProduction.getScanner(s);
-      resultSandboxScanner = hTableSandbox.getScanner(s);
-      //TODO - check why the below method fails
-      //Result.compareResults(resultProduction, resultSandbox); // this test should not throw any exception
-      //
-      assertEquals("production should have the 10 scanner rows", countRows(resultProductionScanner), 10L);
-      assertEquals("sandbox should have the 10 scanner rows", countRows(resultSandboxScanner), 10L);
+        // count cells
+        origResults = hTableOriginal.getScanner(scan);
+        sandResults = hTableSandbox.getScanner(scan);
+        mimicResults = hTableMimic.getScanner(scan);
+        assertEquals("original table should have cells", 40L, countCells(origResults));
+        assertEquals("sandbox table should return cells", 40L, countCells(sandResults));
+        assertEquals("mimic table should have cells", 40L, countCells(mimicResults));
 
 
-      // scan specific column families
-      s = new Scan(Bytes.toBytes(Integer.toString(11)), Bytes.toBytes(Integer.toString(20)));
-      s.addFamily(Bytes.toBytes("cf1"));
-      resultProductionScanner = hTableProduction.getScanner(s);
-      resultSandboxScanner = hTableSandbox.getScanner(s);
-      assertEquals("production should have 20 cells", countCells(resultProductionScanner), 20L);
-      assertEquals("sandbox should have the 20 cells", countCells(resultSandboxScanner), 20L);
+        // insert on sandbox / mimic on multiple CFs
+        setCellValue(hTableSandbox, newRowId, CF1, COL1, "v1");
+        setCellValue(hTableSandbox, newRowId, CF1, COL2, "v2");
+        setCellValue(hTableSandbox, newRowId, CF2, COL1, "v3");
+        setCellValue(hTableSandbox, newRowId, CF2, COL2, "v4");
+        setCellValue(hTableSandbox, existingRowId, CF2, COL2, "v5");
 
-      // scan specific columns
-      s = new Scan();
-      s.addColumn(Bytes.toBytes("cf3"), Bytes.toBytes("col3"));
-      resultProductionScanner = hTableProduction.getScanner(s);
-      resultSandboxScanner = hTableSandbox.getScanner(s);
-      assertEquals("production should have 25 cells", countCells(resultProductionScanner), 25L);
-      assertEquals("sandbox should have the 35 cells", countCells(resultSandboxScanner), 35L);
+        // repeat for mimic table
+        setCellValue(hTableMimic, newRowId, CF1, COL1, "v1");
+        setCellValue(hTableMimic, newRowId, CF1, COL2, "v2");
+        setCellValue(hTableMimic, newRowId, CF2, COL1, "v3");
+        setCellValue(hTableMimic, newRowId, CF2, COL2, "v4");
+        setCellValue(hTableMimic, existingRowId, CF2, COL2, "v5");
 
-      // same data in production and sandbox
-      // String prod = Bytes.toString(resultProduction.getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-      // String sand = Bytes.toString(resultSandbox.getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-      // assertEquals("value should be same for sandbox and production", prod, sand);
+        // re-count results
+        origResults = hTableOriginal.getScanner(scan);
+        sandResults = hTableSandbox.getScanner(scan);
+        mimicResults = hTableMimic.getScanner(scan);
+        assertEquals("original table should have the same rows", 20L, countRows(origResults));
+        assertEquals("mimic table should have the new and the old rows", 21L, countRows(mimicResults));
+        assertEquals("sandbox table should have the new and the old rows", 21L, countRows(sandResults));
 
-      // not in production and not in sandbox
-      s = new Scan();
-      s.addColumn(Bytes.toBytes("cf100"), Bytes.toBytes("col80"));
-      resultProductionScanner = hTableProduction.getScanner(s);
-      resultSandboxScanner = hTableSandbox.getScanner(s);
-      assertEquals("production should return null", resultProductionScanner, null);
-      assertEquals("sandbox should return null", resultSandboxScanner, null);
+        // results fetched because iterating thru results for counting alters result object state
+        sandResults = hTableSandbox.getScanner(scan);
+        mimicResults = hTableMimic.getScanner(scan);
+        assertEquals("mimic table should have all new and old cells", 44L, countCells(mimicResults));
+        assertEquals("sandbox table should have all new and old cells", 44L, countCells(sandResults));
 
-      // not in production, but in sandbox
-      s = new Scan();
-      s.addColumn(Bytes.toBytes("cf4"), Bytes.toBytes("col2"));
-      resultProductionScanner = hTableProduction.getScanner(s);
-      resultSandboxScanner = hTableSandbox.getScanner(s);
-      assertEquals("production should return null", resultProductionScanner, null);
-      assertEquals("sandbox should have the 10 rows", countRows(resultSandboxScanner), 10L);
+        // Scan specifying one CF
+        origResults = hTableOriginal.getScanner(scanCF1);
+        sandResults = hTableSandbox.getScanner(scanCF1);
+        mimicResults = hTableMimic.getScanner(scanCF1);
+        assertEquals("original table should have rows with selected CF", 20L, countRows(origResults));
+        assertEquals("mimic table should have a new row with selected CF", 21L, countRows(mimicResults));
+        assertEquals("sandbox table should have a new row with selected CF", 21L, countRows(sandResults));
 
-      // in production, but not in sandbox
-      hTableProduction = new HTable(conf, productionTablePath);
-      for (int i = 35; i < 40; i++) {
-        Put put = new Put(Bytes.toBytes(Integer.toString(i)));
-        put.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(i)));
-        put.add(Bytes.toBytes("cf5"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(i)));
-        hTableProduction.put(put);
-      }
-      hTableProduction.flushCommits();
+        // results fetched because iterating thru results for counting alters result object state
+        sandResults = hTableSandbox.getScanner(scanCF1);
+        mimicResults = hTableMimic.getScanner(scanCF1);
+        assertEquals("mimic table should have all new cells for selected CF", 22L, countCells(mimicResults));
+        assertEquals("sandbox table should have all new cells for selected CF", 22L, countCells(sandResults));
 
-      s = new Scan();
-      s.addColumn(Bytes.toBytes("cf5"), Bytes.toBytes("col1"));
-      resultProductionScanner = hTableProduction.getScanner(s);
-      resultSandboxScanner = hTableSandbox.getScanner(s);
-      assertEquals("production should return 5 rows", countRows(resultProductionScanner), 5L);
-      assertEquals("sandbox should also return 5 rows", countRows(resultSandboxScanner), 10L);
 
-      s = new Scan(Bytes.toBytes(Integer.toString(35)), Bytes.toBytes(Integer.toString(40)));
-      resultProductionScanner = hTableProduction.getScanner(s);
-      resultSandboxScanner = hTableSandbox.getScanner(s);
-      assertEquals("production should return 5 rows", countRows(resultProductionScanner), 5L);
-      assertEquals("sandbox should also return 5 rows", countRows(resultSandboxScanner), 10L);
+        // delete some row columns from sandbox
+        delCell(hTableSandbox, newRowId, CF1, COL1);
+        delCell(hTableMimic, newRowId, CF1, COL1);
 
-      // in production and in sandbox. sandbox should take preference
-      for (int i = 0; i < 25; i+=2) {
-        Put put = new Put(Bytes.toBytes(Integer.toString(i)));
-        put.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(1000 * i)));
-        put.add(Bytes.toBytes("cf1"), Bytes.toBytes("col2"), Bytes.toBytes(Integer.toString(2000 * i)));
-        put.add(Bytes.toBytes("cf2"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(3000 * i)));
-        hTableSandbox.put(put);
-      }
-      hTableSandbox.flushCommits();
+        verifyFinalState2(hTableSandbox);
+        verifyFinalState2(hTableMimic);
 
-      s = new Scan(Bytes.toBytes(Integer.toString(4)), Bytes.toBytes(Integer.toString(7)));
-      resultProductionScanner = hTableProduction.getScanner(s);
-      resultSandboxScanner = hTableSandbox.getScanner(s);
-      List<String> productionKeyValues = new ArrayList<String>();
-      List<String> sandboxKeyValues = new ArrayList<String>();
-      for (Result result = resultProductionScanner.next(); (result != null); result = resultProductionScanner.next()) {
-        for(KeyValue keyValue : result.list()) {
-          productionKeyValues.add(keyValue.getKeyString() + " " + Bytes.toString(keyValue.getValue()));
-          //System.out.println("Qualifier : " + keyValue.getKeyString() + " : Value : " + Bytes.toString(keyValue.getValue()));
-        }
-      }
+        pushSandbox();
 
-      for (Result result = resultSandboxScanner.next(); (result != null); result = resultProductionScanner.next()) {
-        for(KeyValue keyValue : result.list()) {
-          productionKeyValues.add(keyValue.getKeyString() + " " + Bytes.toString(keyValue.getValue()));
-          //System.out.println("Qualifier : " + keyValue.getKeyString() + " : Value : " + Bytes.toString(keyValue.getValue()));
-        }
-      }
-
-      assertEquals("production scanner should return original data", productionKeyValues, 5L);
-      assertEquals("sandbox should also return new modified data", sandboxKeyValues, 10L);
+        verifyFinalState2(hTableOriginal);
     }
 
-    @AfterClass
-    public static void cleanupTable() throws IOException {
-      String sandboxTablePath = String.format("%s_new_sand", productionTablePath);
-      sandboxAdmin.deleteSandbox(sandboxTablePath);
-      hba.deleteTable(productionTablePath);
+    private void verifyFinalState2(HTable hTable) throws IOException {
+        ResultScanner result,resultSelectiveCF;
+
+        result = hTable.getScanner(scan);
+        assertEquals("table should have a new row", 21L, countRows(result));
+        result = hTable.getScanner(scan);
+        assertEquals("table should have all new cells except deleted", 43L, countCells(result));
+
+        resultSelectiveCF = hTable.getScanner(scanCF2);
+        assertEquals("table should have a new row with selected CF", 21L, countRows(resultSelectiveCF));
+
+        resultSelectiveCF = hTable.getScanner(scanCF2);
+        assertEquals("table should have all cells from selected CF (except deleted)", 22L, countCells(resultSelectiveCF));
+
+        resultSelectiveCF = hTable.getScanner(scanCF1);
+        assertEquals("table should have a new row with selected CF", 21L, countRows(resultSelectiveCF));
+
+        resultSelectiveCF = hTable.getScanner(scanCF1);
+        assertEquals("table should have all cells from selected CF (except deleted)", 21L, countCells(resultSelectiveCF));
     }
 }
