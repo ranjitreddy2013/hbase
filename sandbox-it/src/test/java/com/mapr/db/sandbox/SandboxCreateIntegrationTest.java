@@ -1,5 +1,6 @@
 package com.mapr.db.sandbox;
 
+import org.apache.hadoop.fs.Path;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -22,5 +23,18 @@ public class SandboxCreateIntegrationTest extends BaseSandboxIntegrationTest {
 		assertEquals("original's sandbox list wrong size", 1,
 				originalList.size());
 	}
+	
+	@Test(expected = SandboxException.class)
+	public void testCreateDupSandbox() throws IOException, SandboxException {
+		sandboxAdmin.createSandbox(sandboxTablePath, originalTablePath);
+	}
 
+	@Test(expected = SandboxException.class)
+	public void testCreateSandboxWithExistingFilename() throws IOException,
+			SandboxException {
+		Path sandboxPath = new Path(sandboxTablePath);
+		Path someFile = new Path(sandboxPath.getParent(), "someFile");
+		fs.create(someFile);
+		sandboxAdmin.createSandbox(someFile.toString(), originalTablePath);
+	}
 }

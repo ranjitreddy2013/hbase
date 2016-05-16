@@ -1,0 +1,19 @@
+diff a/sandbox-it/src/test/java/com/mapr/db/sandbox/SandboxCreateIntegrationTest.java b/sandbox-it/src/test/java/com/mapr/db/sandbox/SandboxCreateIntegrationTest.java	(rejected hunks)
+@@ -18,4 +19,17 @@ public class SandboxCreateIntegrationTest extends BaseSandboxIntegrationTest {
+         assertTrue(originalList.contains(sandboxTablePath));
+         assertEquals("original's sandbox list wrong size", 1, originalList.size());
+     }
++
++    @Test(expected = SandboxException.class)
++    public void testCreateDupSandbox() throws IOException, SandboxException {
++        sandboxAdmin.createSandbox(sandboxTablePath, originalTablePath);
++    }
++
++    @Test(expected = SandboxException.class)
++    public void testCreateSandboxWithExistingFilename() throws IOException, SandboxException {
++        Path sandboxPath = new Path(sandboxTablePath);
++        Path someFile = new Path(sandboxPath.getParent(), "someFile");
++        fs.create(someFile);
++        sandboxAdmin.createSandbox(someFile.toString(), originalTablePath);
++    }
+ }
