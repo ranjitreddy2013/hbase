@@ -53,6 +53,13 @@
       <artifactId>netty</artifactId>
       <version>3.6.6.Final</version>
     </dependency>
+
+    <dependency>
+      <groupId>commons-configuration</groupId>
+      <artifactId>commons-configuration</artifactId>
+      <version>1.10</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <profiles>

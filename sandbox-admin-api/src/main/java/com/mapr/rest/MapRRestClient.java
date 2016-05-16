@@ -1,7 +1,6 @@
 package com.mapr.rest;
 
 import com.mapr.db.sandbox.SandboxException;
-import org.apache.hadoop.fs.Path;
 import org.apache.http.HttpResponse;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -33,8 +32,9 @@ public class MapRRestClient {
 
     final HttpClient client;
 
-    public MapRRestClient(String hostname, String username, String password) throws SandboxException {
-        this.baseUrl = String.format("https://%s/rest", hostname);
+    public MapRRestClient(String[] hostnames, String username, String password) throws SandboxException {
+        // TODO make sure we handle multiple endpoints
+        this.baseUrl = String.format("https://%s/rest", hostnames[0]);
         this.username = username;
         this.password = password;
 
@@ -61,6 +61,52 @@ public class MapRRestClient {
         } catch (KeyStoreException e) {
             throw new SandboxException("Could not create https client", e);
         }
+    }
+
+    public void testCredentials() throws SandboxException {
+        HttpResponse response = null;
+        try {
+            response = client.execute(new HttpGet(baseUrl));
+        } catch (IOException e) {
+            throw new SandboxException("Could not test credentials", e);
+        }
+
+        int statusCode = response.getStatusLine().getStatusCode();
+        if (statusCode == 401) {
+            throw new SandboxException("User/password invalid", null);
+        }
+    }
+
+
+    public boolean waitForState(String confirmUrlPath, boolean ignoreErrors, String column, String expectedValue, long timeout) throws SandboxException {
+        long startTime = System.currentTimeMillis(), endTime;
+
+        do {
+            try {
+                JSONObject result = callCommand(confirmUrlPath, ignoreErrors);
+
+                JSONArray data = result.has("data") ? result.getJSONArray("data") : null;
+
+                if (data != null) {
+                    String returnedValue = data.getJSONObject(0).getString(column);
+
+                    if (expectedValue.equals(returnedValue)) {
+                        return true;
+                    }
+
+                    Thread.sleep(1000L);
+                }
+            } catch (InterruptedException e) {
+                throw new SandboxException(String.format("Error waiting for state %s=%s (url = %s)",
+                        column, expectedValue, confirmUrlPath), e);
+            } catch (JSONException e) {
+                throw new SandboxException(String.format("Error parsing state %s=%s (url = %s)",
+                        column, expectedValue, confirmUrlPath), e);
+            }
+            endTime = System.currentTimeMillis();
+        } while(endTime - startTime < timeout);
+
+        return false;
     }
 
     public JSONObject callCommand(String urlPath, boolean ignoreErrors) throws SandboxException {

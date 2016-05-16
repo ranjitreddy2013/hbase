@@ -1,9 +1,14 @@
 package com.mapr.db.sandbox;
 
+import com.google.common.collect.Lists;
 import com.mapr.fs.MapRFileSystem;
 import com.mapr.db.sandbox.utils.SandboxAdminUtils;
 import com.mapr.fs.MapRFileSystem;
 import com.mapr.rest.MapRRestClient;
+import org.apache.commons.configuration.CompositeConfiguration;
+import org.apache.commons.configuration.ConfigurationException;
+import org.apache.commons.configuration.PropertiesConfiguration;
+import org.apache.commons.configuration.SystemConfiguration;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -14,6 +19,7 @@ import org.apache.hadoop.hbase.client.*;
 import org.junit.After;
 import org.junit.Before;
 
+import java.io.File;
 import java.io.IOException;
 
 public abstract class BaseSandboxIntegrationTest {
@@ -28,32 +34,52 @@ public abstract class BaseSandboxIntegrationTest {
 	static final byte[] COL1 = COL1_NAME.getBytes();
 	static final byte[] COL2 = COL2_NAME.getBytes();
 	
-    Scan scan = new Scan();
-
-    // TODO load from settings as env specific
-	final static String TEST_WORKING_DIR_PREFIX = "/philips_sandbox_it_tmp/";
-
+	protected static String TEST_WORKING_DIR_PREFIX;
     protected static Configuration conf;
     protected static HBaseAdmin hba;
     protected static MapRFileSystem fs;
     protected static SandboxAdmin sandboxAdmin;
-    protected static MapRRestClient restClient;
+    protected static CompositeConfiguration testConfig = new CompositeConfiguration();
+    final Scan scan = new Scan();
+    final MapRRestClient restClient;
 
     static {
         conf = new Configuration();
         try {
             hba = new HBaseAdmin(conf);
             fs = (MapRFileSystem) FileSystem.get(conf);
-            // TODO grab this from configuration
-            restClient = new MapRRestClient("localhost:8443", "mapr", "mapr");
             sandboxAdmin = new SandboxAdmin(conf);
         } catch (IOException e) {
-            e.printStackTrace();
+        	throw new RuntimeException(e);
         } catch (SandboxException e) {
-            e.printStackTrace();
+        	throw new RuntimeException(e);
         }
+        
+		// load configuration
+		try {
+			testConfig.addConfiguration(new SystemConfiguration());
+			testConfig.addConfiguration(new PropertiesConfiguration(
+					"sandbox-integration-tests.properties"));
+		} catch (ConfigurationException e) {
+			throw new RuntimeException(e);
+		}
+
     }
 
+	public BaseSandboxIntegrationTest() {
+		TEST_WORKING_DIR_PREFIX = testConfig.getString(
+				"sandbox.test.working_dir_prefix", "/sandbox-it");
+		String[] restUrls = testConfig.getStringArray("sandbox.test.rest_urls");
+		String username = testConfig.getString("sandbox.test.username", "mapr");
+		String password = testConfig.getString("sandbox.test.password", "mapr");
+
+		try {
+			restClient = new MapRRestClient(restUrls, username, password);
+		} catch (SandboxException e) {
+			throw new RuntimeException(e);
+		}
+	}
+	
     protected String testWorkingDir;
 
     protected String originalTablePath;
@@ -71,7 +97,7 @@ public abstract class BaseSandboxIntegrationTest {
 
     @Before
     public void setupTest() throws SandboxException, IOException {
-        testWorkingDir = TEST_WORKING_DIR_PREFIX + randomName();
+        testWorkingDir = String.format("%s/%s", TEST_WORKING_DIR_PREFIX, randomName());
         SandboxTestUtils.assureWorkingDirExists(fs,testWorkingDir);
 
         // create original table

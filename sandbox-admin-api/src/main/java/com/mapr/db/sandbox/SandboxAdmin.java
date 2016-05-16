@@ -5,6 +5,10 @@ import com.google.common.collect.Maps;
 import com.mapr.db.sandbox.utils.SandboxAdminUtils;
 import com.mapr.fs.MapRFileSystem;
 import com.mapr.rest.MapRRestClient;
+import org.apache.commons.configuration.CompositeConfiguration;
+import org.apache.commons.configuration.ConfigurationException;
+import org.apache.commons.configuration.PropertiesConfiguration;
+import org.apache.commons.configuration.SystemConfiguration;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.commons.math3.util.Pair;
@@ -24,23 +28,53 @@ import static com.mapr.db.sandbox.utils.SandboxAdminUtils.replicationBytesPendin
 public class SandboxAdmin {
     private static final Log LOG = LogFactory.getLog(SandboxAdmin.class);
 
-    private static final long REPLICA_WAIT_POLL_INTERVAL = 3000L;
-    private static final long REPLICA_TO_PROXY_WAIT_TIME = 6000L;
+    private static final long REPLICA_WAIT_POLL_INTERVAL;
+    private static final long REPLICA_TO_PROXY_WAIT_TIME;
     static final String LOCK_ACQ_FAIL_MSG = "Sandbox Push Lock could not be acquired";
     public static final String SANDBOX_PUSH_SNAPSHOT_FORMAT = "sandbox_push_%s";
+
+    protected static CompositeConfiguration toolConfig = new CompositeConfiguration();
+
+    static {
+        // load configuration
+        try {
+            toolConfig.addConfiguration(new SystemConfiguration());
+            toolConfig.addConfiguration(new PropertiesConfiguration("sandbox-tool.properties"));
+        } catch (ConfigurationException e) {
+            throw new RuntimeException(e);
+        }
+
+        // TODO play with these settings in configuration
+        REPLICA_WAIT_POLL_INTERVAL = toolConfig.getLong("sandbox.wait_poll_interval", 3000L);
+        REPLICA_TO_PROXY_WAIT_TIME = toolConfig.getLong("sandbox.push_extra_wait_interval", 6000L);
+    }
 
     MapRFileSystem fs;
     MapRRestClient restClient;
     RecentSandboxTablesListManager recentSandboxManager;
 
     public SandboxAdmin(Configuration configuration) throws SandboxException {
+        this(configuration,
+                toolConfig.getString("sandbox.username", "mapr"),
+                toolConfig.getString("sandbox.password", "mapr"));
+    }
+
+    public SandboxAdmin(Configuration configuration, String username, String password) throws SandboxException {
+        this(configuration, new MapRRestClient(toolConfig.getStringArray("sandbox.rest_urls"), username, password));
+    }
+
+    public SandboxAdmin(Configuration configuration, MapRRestClient restClient) throws SandboxException {
         try {
             fs = (MapRFileSystem) FileSystem.get(configuration);
         } catch (IOException e) {
             e.printStackTrace();
         }
-        restClient = new MapRRestClient("localhost:8443", "mapr", "mapr");
         recentSandboxManager = new RecentSandboxTablesListManager(fs);
+        this.restClient = restClient;
+
+        if (restClient != null) {
+            restClient.testCredentials();
+        }
     }
 
 
@@ -160,11 +194,10 @@ public class SandboxAdmin {
     }
 
     private void createLockFile(MapRFileSystem fs, Path lockFile) throws SandboxException {
-
         try {
             if (!fs.exists(lockFile)) {
                 // create right away
-                fs.create(lockFile, false); // TODO might be worth to handle exception here
+                fs.create(lockFile, false);
             } else {
                 throw new SandboxException(LOCK_ACQ_FAIL_MSG, null);
             }

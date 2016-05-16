@@ -20,7 +20,6 @@ import static org.junit.Assert.assertTrue;
 
 public class SandboxPushIntegrationTest extends BaseSandboxIntegrationTest {
 
-    @Ignore
     @Test
     public void testPreventSandboxEditing() throws IOException, SandboxException, InterruptedException {
         setCellValue(hTableSandbox, newRowId, CF1, COL1, "initial val");
@@ -28,11 +27,11 @@ public class SandboxPushIntegrationTest extends BaseSandboxIntegrationTest {
 
         SandboxAdminUtils.lockEditsForTable(restClient, sandboxTablePath, CF1_NAME);
 
-        Thread.sleep(1000L); // sometime it takes time for locks to be applied
-
+        // TODO do we require a new HTable?
+        HTable x = new HTable(conf, sandboxTablePath);
         boolean thrown = false;
         try {
-            setCellValue(hTableSandbox, newRowId, CF1, COL1, "another val");
+            setCellValue(x, newRowId, CF1, COL1, "another val");
         } catch (Exception ex) {
             thrown = true;
         }

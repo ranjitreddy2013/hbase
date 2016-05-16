@@ -207,8 +207,15 @@ public class SandboxAdminUtils {
         final String urlPath =  String.format("/table/cf/edit?path=%s&cfname=%s&writeperm=",
                 tablePath, cf);
 
+        final String confirmUrlPath =  String.format("/table/cf/list?path=%s&cfname=%s",
+                tablePath, cf);
+
+
         try {
             restClient.callCommand(urlPath, false);
+            if (!restClient.waitForState(confirmUrlPath, false, "writeperm", "", 30000L)) {
+                throw new SandboxException(String.format("Could not lock CF %s on table %s ", cf, tablePath), null);
+            }
         } catch (SandboxException e) {
             throw new SandboxException(String.format("Error locking CF %s on table %s ", cf, tablePath), e);
         }

@@ -1,9 +1,11 @@
 package com.mapr.db.sandbox;
 
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.commons.cli.*;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.security.UserGroupInformation;
 
 import java.io.IOException;
 import java.util.List;
@@ -97,7 +99,10 @@ public class SandboxTool {
         }
 
         try {
-            final SandboxAdmin sandboxAdmin = new SandboxAdmin(new Configuration());
+            final UserGroupInformation currentUser = UserGroupInformation.getCurrentUser();
+            final SandboxAdmin sandboxAdmin = requiresPassword(operation) ?
+                    new SandboxAdmin(new Configuration(), currentUser.getUserName(), promptPassword()) :
+                    new SandboxAdmin(new Configuration(), null);
 
             if (operation.equals(OP_CREATE)) {
                 sandboxAdmin.createSandbox(cmd.getOptionValue("path"),
@@ -142,6 +147,16 @@ public class SandboxTool {
         System.exit(-1);
     }
         System.exit(0);
+    }
+
+    private static boolean requiresPassword(String operation) {
+        return Lists.newArrayList(OP_CREATE, OP_DELETE, OP_PUSH).contains(operation);
+    }
+
+    private static String promptPassword() {
+        System.out.print("Password: ");
+        System.out.flush();
+        return String.valueOf(System.console().readPassword());
     }
 
     private static void printUsage(String op) {
