@@ -60,14 +60,15 @@ public class SandboxAdmin {
     MapRFileSystem fs;
     MapRRestClient restClient;
     DrillViewConverter drillViewConverter;
-    SandboxTablesListManager globalSandboxListManager;
+    SandboxTablesListManager sandboxTablesListManager;
 
     private String username;
     private String password;
+    private static final String MAPR_USER = "mapr";
 
     public SandboxAdmin(Configuration configuration) throws SandboxException {
         this(configuration,
-                toolConfig.getString("sandbox.username", "mapr"),
+                toolConfig.getString("sandbox.username", MAPR_USER),
                 toolConfig.getString("sandbox.password", "mapr"));
     }
 
@@ -85,8 +86,6 @@ public class SandboxAdmin {
             e.printStackTrace();
         }
 
-        globalSandboxListManager = SandboxTablesListManager.global(fs, username);
-
         if (password != null) {
             this.restClient = new MapRRestClient(toolConfig.getStringArray("sandbox.rest_urls"), username, password);
 
@@ -94,6 +93,46 @@ public class SandboxAdmin {
                 restClient.testCredentials();
             }
         }
+
+        // Create sandbox list table if it is not already created.
+        String sandboxListTable = toolConfig.getString("sandbox.list.table", "/user/mapr/sandbox_list_tbl");
+        createSandboxListTable(sandboxListTable);
+
+        try {
+                 sandboxTablesListManager = SandboxTablesListManager.global(fs, username, sandboxListTable);
+             } catch (IOException e) {
+                 throw new SandboxException("Could not create SandboxListManager instance.", e);
+        }
+    }
+
+    public void createSandboxListTable(String sandboxListTable) throws SandboxException {
+        String sandboxListTablePermissions = toolConfig.getString("sandbox.list.table.cf.permissions", "u:mapr");
+
+        Path sandboxListTablePath = new Path(sandboxListTable);
+
+        try {
+            if (fs.exists(sandboxListTablePath)) {
+                LOG.info("Sandbox list table already exists, skipping creation.");
+                return;
+            }
+        } catch (IOException e) {
+            throw new SandboxException(String.format("Could not determine if sandbox list table %s already exists.",
+                        sandboxListTable), e);
+        }
+        
+        MapRRestClient maprRestClient = new MapRRestClient(
+				toolConfig.getStringArray("sandbox.rest_urls"), MAPR_USER,
+				"mapr");
+
+		if (maprRestClient != null) {
+			maprRestClient.testCredentials();
+		}
+
+         // Create sandbox list table
+         SandboxAdminUtils.createSandboxListTable(fs, maprRestClient, sandboxListTable);
+         // Create sandbox list table column family
+         SandboxAdminUtils.createSandboxListTableCF(maprRestClient,  sandboxListTable,  SandboxTablesListManager.CF_NAME,  sandboxListTablePermissions);
+
     }
 
 
@@ -106,11 +145,8 @@ public class SandboxAdmin {
         SandboxAdminUtils.addTableReplica(restClient, sandboxTablePath, originalTablePath, true);
         writeSandboxMetadataFile(sandboxTablePath, originalFid, originalTablePath, SandboxTable.SandboxState.ENABLED);
 
-        // update lists
-        SandboxTablesListManager origTableSandboxListManager = SandboxTablesListManager
-                .forOriginalTable(fs, originalTablePath, username);
-        globalSandboxListManager.moveToTop(sandboxTablePath);
-        origTableSandboxListManager.moveToTop(sandboxTablePath);
+       sandboxTablesListManager.insertSandboxInInfoTable(originalTablePath, sandboxTablePath, username);
+ 
     }
 
 
@@ -296,10 +332,7 @@ public class SandboxAdmin {
         // update lists
         final String originalPath = info.get(SandboxTable.InfoType.ORIGINAL_PATH);
 
-        SandboxTablesListManager origTableSandboxListManager = SandboxTablesListManager
-                .forOriginalTable(fs, originalPath, username);
-        globalSandboxListManager.delete(sandboxTablePath);
-        origTableSandboxListManager.delete(sandboxTablePath);
+        sandboxTablesListManager.deleteSandboxFromInfoTable(originalPath, sandboxTablePath, username);
     }
 
     @VisibleForTesting
@@ -355,13 +388,18 @@ public class SandboxAdmin {
 
     public List<String> listRecent(String originalTablePath) throws IOException {
         if (originalTablePath == null) {
-            return globalSandboxListManager.getListFromFile();
+        	if (username != null && username.equals(MAPR_USER)) {
+                return sandboxTablesListManager.getAllSandboxesForUser(null);
+        	} else {
+               return sandboxTablesListManager.getAllSandboxesForUser(username);
+        	}
+        } else {
+        	if (username != null && username.equals(MAPR_USER)) {
+                return sandboxTablesListManager.getAllSandboxes(originalTablePath, null, Integer.MAX_VALUE, null, null);
+        	} else {
+                return sandboxTablesListManager.getAllSandboxes(originalTablePath, username, Integer.MAX_VALUE, null, null);
+        	}
         }
-
-        SandboxTablesListManager originalSandboxListManager = SandboxTablesListManager
-                .forOriginalTable(fs, originalTablePath, username);
-
-        return originalSandboxListManager.getListFromFile();
     }
 
     public void convertDrill(String sandboxTablePath, String drillConnectionString) throws SandboxException, IOException {

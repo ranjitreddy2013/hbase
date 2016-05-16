@@ -4,11 +4,16 @@ import com.google.common.collect.Sets;
 import com.mapr.db.sandbox.SandboxException;
 import com.mapr.fs.MapRFileSystem;
 import com.mapr.rest.MapRRestClient;
+import org.apache.http.NameValuePair;
+import org.apache.http.message.BasicNameValuePair;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.commons.math3.util.Pair;
 import org.apache.hadoop.fs.Path;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
+
 import org.codehaus.jettison.json.JSONArray;
 import org.codehaus.jettison.json.JSONException;
 import org.codehaus.jettison.json.JSONObject;
@@ -18,6 +23,8 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Set;
+import java.util.List;
+import java.util.ArrayList;
 
 public class SandboxAdminUtils {
     private static final Log LOG = LogFactory.getLog(SandboxAdminUtils.class);
@@ -33,6 +40,55 @@ public class SandboxAdminUtils {
                     tablePath, cf), e);
         }
     }
+
+    public static void createSandboxListTable(MapRFileSystem fs, MapRRestClient restClient, String tablePath) throws SandboxException {
+		StringBuilder sb = new StringBuilder(String.format(
+				"/table/create?path=%s", tablePath));
+
+		final String urlPath = sb.toString();
+
+		try {
+			restClient.callCommand(urlPath, false);
+		} catch (SandboxException e) {
+			try {
+				if (fs.exists(new Path(tablePath))) {
+					LOG.info("Sandbox list table already exists.");
+					return;
+				} else {
+					throw new SandboxException(String.format(
+							"Error creating table path = %s", tablePath), e);
+				}
+			} catch (IllegalArgumentException e1) {
+				throw new SandboxException("IllegalArgumentException creating sandbox list table", e1);
+			} catch (IOException e1) {
+				throw new SandboxException("IOException creating sandbox list table", e1);
+			}
+		}
+    }
+
+	public static void createSandboxListTableCF(MapRRestClient restClient,
+			String tablePath, String cf, String listOfPermissions)
+			throws SandboxException {
+		String urlPath = null;
+		try {
+			String encodedCFPermissions = URLEncoder.encode(listOfPermissions, "UTF8");
+
+			String permParam = String.format("writeperm=%s&readperm=%s", encodedCFPermissions,
+					encodedCFPermissions);
+			urlPath = String.format("/table/cf/create?path=%s&cfname=%s&%s",
+					tablePath, cf, permParam);
+		} catch (UnsupportedEncodingException e1) {
+			throw new SandboxException("Error encoding sandbox list table CF permissions ", e1);
+		}
+
+		try {
+			restClient.callCommand(urlPath, false);
+		} catch (SandboxException e) {
+			throw new SandboxException(String.format(
+					"Error creating CF in table path=%s, cfname=%s", tablePath,
+					cf), e);
+		}
+	}
 
     public static void createSimilarTable(MapRRestClient restClient, String tablePath, String similarToTablePath) throws SandboxException {
         StringBuilder sb = new StringBuilder(String.format("/table/create?path=%s", tablePath));
