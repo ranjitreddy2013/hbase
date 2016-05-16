@@ -364,7 +364,7 @@
               <mappings>
                 <mapping>
                   <directory>/opt/mapr/sandbox/lib/client</directory>
-                  <filemode>750</filemode>
+                  <filemode>755</filemode>
                   <username>mapr</username>
                   <groupname>mapr</groupname>
                   <sources>

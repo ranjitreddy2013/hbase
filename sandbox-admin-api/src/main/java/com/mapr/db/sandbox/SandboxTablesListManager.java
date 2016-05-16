@@ -27,11 +27,15 @@ public class SandboxTablesListManager {
 
     private final Path listFilePath;
     private final MapRFileSystem fs;
+    private final String ownerUsername;
 
-    public SandboxTablesListManager(MapRFileSystem fs, Path listFilePath) {
+    public SandboxTablesListManager(MapRFileSystem fs, Path listFilePath, String ownerUsername) {
         this.fs = fs;
         this.listFilePath = listFilePath;
+        this.ownerUsername = ownerUsername;
     }
+
+
 
     /**
      * Adds {@param newTable} to the top of tables list.
@@ -118,6 +122,11 @@ public class SandboxTablesListManager {
 
             // set the permissions and then rename
             fs.setPermission(tmpFile, FsPermission.createImmutable((short)00700));
+
+            if (ownerUsername != null) {
+                fs.setOwner(tmpFile, ownerUsername, null);
+            }
+
             fs.rename(tmpFile, listFilePath);
         } catch (Exception e) {
             LOG.error(e);
@@ -129,21 +138,21 @@ public class SandboxTablesListManager {
             Path sboxGlobalListFile = new Path(String.format("%s/%s",
                     String.format(SBOX_TABLE_LIST_PREFIX_FORMAT, username),
                     GLOBAL_SANDBOX_TABLES_LIST_PATH));
-            GLOBAL_INSTANCE = new SandboxTablesListManager(fs, sboxGlobalListFile);
+            GLOBAL_INSTANCE = new SandboxTablesListManager(fs, sboxGlobalListFile, username);
         }
 
         return GLOBAL_INSTANCE;
     }
 
-    public static SandboxTablesListManager forOriginalTable(MapRFileSystem fs, Path originalPath, String originalFid, String username) {
-        if (!registry.containsKey(originalFid)) {
+    public static SandboxTablesListManager forOriginalTable(MapRFileSystem fs, String originalPath, String originalFid, String username) {
+        if (!registry.containsKey(originalPath)) {
             Path originalSboxListFilePath = new Path(String.format("%s/%s",
                     String.format(SBOX_TABLE_LIST_PREFIX_FORMAT, username),
                     String.format(ORIGINAL_SBOX_LIST_FILENAME_FORMAT, originalFid)));
 
-            registry.put(originalFid, new SandboxTablesListManager(fs, originalSboxListFilePath));
+            registry.put(originalPath, new SandboxTablesListManager(fs, originalSboxListFilePath, username));
         }
 
-        return registry.get(originalFid);
+        return registry.get(originalPath);
     }
 }

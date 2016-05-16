@@ -67,8 +67,8 @@ if [ ! -e "$JAVA" ]; then
   exit 1
 fi
 
-# -agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=9999 \
-$JAVA  \
+#$JAVA -agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=9999 \
+$JAVA \
   -Dhttps.protocols=TLSv1.2 \
   -Dlog4j.configuration=sandboxcli-log4j.properties \
   -Dlog.file=$SANDBOX_LOG_FILE \

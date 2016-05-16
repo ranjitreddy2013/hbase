@@ -184,9 +184,9 @@ public class SandboxTool {
             System.err.println("Error: " + e.getMessage());
             System.exit(-1);
         } catch (IOException e) {
-        System.err.println("Error: " + e.getMessage());
-        System.exit(-1);
-    }
+            System.err.println("Error: " + e.getMessage());
+            System.exit(-1);
+        }
         System.exit(0);
     }
 

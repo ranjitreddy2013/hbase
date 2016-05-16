@@ -71,7 +71,8 @@ public class SandboxTableUtils {
                 BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(metaFilePath)));
                 info.put(SandboxTable.InfoType.SANDBOX_FID, getFidFromPath(fs, sandboxTablePath));
                 info.put(SandboxTable.InfoType.METAFILE_PATH, metaFilePath.toString());
-                info.put(SandboxTable.InfoType.ORIGINAL_FID, br.readLine());
+//                info.put(SandboxTable.InfoType.ORIGINAL_FID, br.readLine());
+                info.put(SandboxTable.InfoType.ORIGINAL_PATH, br.readLine());
                 info.put(SandboxTable.InfoType.SANDBOX_STATE, br.readLine());
                 return info;
             } catch (IOException ex) {
@@ -213,7 +214,7 @@ public class SandboxTableUtils {
     }
 
     public static Path lockFilePath(MapRFileSystem fs, String originalFid, Path originalPath) {
-        return new Path(originalPath.getParent(), String.format(".pushlock_%s", originalFid));
+        return new Path(originalPath.getParent(), String.format(".pushlock_%s", originalPath.getName()));
     }
 
     public static Pair<byte[], byte[]> getCellFromMarkedForDeletionCell(Cell cell) {

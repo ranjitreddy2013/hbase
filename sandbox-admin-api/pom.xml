@@ -119,7 +119,7 @@
           <mappings>
             <mapping>
               <directory>${install.prefix}/lib</directory>
-              <filemode>750</filemode>
+              <filemode>755</filemode>
               <username>mapr</username>
               <groupname>mapr</groupname>
               <dependency>
@@ -146,13 +146,13 @@
             </mapping>
             <mapping>
               <directory>${install.prefix}/logs</directory>
-              <filemode>775</filemode>
+              <filemode>777</filemode>
               <username>mapr</username>
               <groupname>mapr</groupname>
             </mapping>
             <mapping>
               <directory>${install.prefix}/bin</directory>
-              <filemode>750</filemode>
+              <filemode>755</filemode>
               <username>mapr</username>
               <groupname>mapr</groupname>
               <sources>

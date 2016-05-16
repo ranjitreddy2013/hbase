@@ -16,10 +16,12 @@ import org.apache.commons.math3.util.Pair;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.map.SerializationConfig;
 
 import java.io.IOException;
+import java.security.PrivilegedAction;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -102,11 +104,11 @@ public class SandboxAdmin {
 
         // creates paused replication from sand to original; original doesn't incl sand in the upstream
         SandboxAdminUtils.addTableReplica(restClient, sandboxTablePath, originalTablePath, true);
-        writeSandboxMetadataFile(sandboxTablePath, originalFid, SandboxTable.SandboxState.ENABLED);
+        writeSandboxMetadataFile(sandboxTablePath, originalFid, originalTablePath, SandboxTable.SandboxState.ENABLED);
 
         // update lists
         SandboxTablesListManager origTableSandboxListManager = SandboxTablesListManager
-                .forOriginalTable(fs, new Path(originalTablePath), originalFid, username);
+                .forOriginalTable(fs, originalTablePath, originalFid, username);
         globalSandboxListManager.moveToTop(sandboxTablePath);
         origTableSandboxListManager.moveToTop(sandboxTablePath);
     }
@@ -131,11 +133,19 @@ public class SandboxAdmin {
 
         // read sandbox metadata
         EnumMap<SandboxTable.InfoType, String> info = SandboxTableUtils.readSandboxInfo(fs, sandboxTablePath);
-        final String originalFid = info.get(SandboxTable.InfoType.ORIGINAL_FID);
-        final Path originalPath = SandboxTableUtils.pathFromFid(fs, originalFid);
-        String originalTablePath = originalPath.toUri().toString();
 
-        final Path lockFile = SandboxTableUtils.lockFilePath(fs, originalFid, originalPath);
+        if (info == null) {
+            throw new SandboxException("Unable to identify metadata file", null);
+        }
+
+//        final String originalFid = info.get(SandboxTable.InfoType.ORIGINAL_FID);
+//        final Path originalPath = SandboxTableUtils.pathFromFid(fs, originalFid);
+//        String originalTablePath = originalPath.toUri().toString();
+
+        final String originalTablePath = info.get(SandboxTable.InfoType.ORIGINAL_PATH);
+        final Path originalPath = new Path(originalTablePath);
+
+        final Path lockFile = SandboxTableUtils.lockFilePath(fs, null, originalPath);
         createLockFile(fs, lockFile);
 
         try {
@@ -180,7 +190,7 @@ public class SandboxAdmin {
             }
 
             // disable sandbox table
-            writeSandboxMetadataFile(sandboxTablePath, originalFid, SandboxTable.SandboxState.SNAPSHOT_CREATE);
+            writeSandboxMetadataFile(sandboxTablePath, null, originalTablePath, SandboxTable.SandboxState.SNAPSHOT_CREATE);
 
             if (snapshot) {
                 String snapshotName = String.format(SANDBOX_PUSH_SNAPSHOT_FORMAT, info.get(SandboxTable.InfoType.SANDBOX_FID));
@@ -191,7 +201,7 @@ public class SandboxAdmin {
                 LOG.info(LOG_MSG_PREFIX + "Snapshot created in volume " + origTableVolumeName);
             }
 
-            writeSandboxMetadataFile(sandboxTablePath, originalFid, SandboxTable.SandboxState.PUSH_STARTED);
+            writeSandboxMetadataFile(sandboxTablePath, null, originalTablePath, SandboxTable.SandboxState.PUSH_STARTED);
 
             // TODO do something about keeping the meta cf without affecting the current replication
             // Delete sandbox specific CFs
@@ -276,33 +286,41 @@ public class SandboxAdmin {
     public void deleteSandbox(String sandboxTablePath) throws IOException, SandboxException {
         EnumMap<SandboxTable.InfoType, String> info = SandboxTableUtils.readSandboxInfo(fs, sandboxTablePath);
 
-        // delete metadata file FIRST
-        Path metadataFilePath = new Path(info.get(SandboxTable.InfoType.METAFILE_PATH));
-        fs.delete(metadataFilePath, false);
+        if (info == null) {
+            throw new SandboxException("Unable to identify metadata file", null);
+        }
 
         // deletes sandbox
         SandboxAdminUtils.deleteTable(restClient, sandboxTablePath);
 
+        // delete metadata file
+        Path metadataFilePath = new Path(info.get(SandboxTable.InfoType.METAFILE_PATH));
+        fs.delete(metadataFilePath, false);
+
         // update lists
-        String originalFid = info.get(SandboxTable.InfoType.ORIGINAL_FID);
-        Path originalPath = SandboxTableUtils.pathFromFid(fs, originalFid);
+//        String originalFid = info.get(SandboxTable.InfoType.ORIGINAL_FID);
+//        Path originalPath = SandboxTableUtils.pathFromFid(fs, originalFid);
+        final String originalPath = info.get(SandboxTable.InfoType.ORIGINAL_PATH);
 
         SandboxTablesListManager origTableSandboxListManager = SandboxTablesListManager
-                .forOriginalTable(fs, originalPath, originalFid, username);
+                .forOriginalTable(fs, originalPath, null, username);
         globalSandboxListManager.delete(sandboxTablePath);
         origTableSandboxListManager.delete(sandboxTablePath);
     }
 
     @VisibleForTesting
-    void writeSandboxMetadataFile(String sandboxTablePath, String originalFid, SandboxTable.SandboxState sandboxState) throws IOException {
-        Path sandboxMetadataFilePath = SandboxTableUtils.metafilePath(fs, sandboxTablePath);
+    void writeSandboxMetadataFile(String sandboxTablePath, String originalFid, String originalPath, SandboxTable.SandboxState sandboxState) throws IOException {
+        final Path sandboxMetadataFilePath = SandboxTableUtils.metafilePath(fs, sandboxTablePath);
 
-        StringBuffer sb = new StringBuffer()
-                .append(originalFid).append("\n")
+        final StringBuffer sb = new StringBuffer()
+//                .append(originalFid).append("\n")
+                .append(originalPath).append("\n")
                 .append(sandboxState);
 
         // content contains FID to original table
+        UserGroupInformation ugi = UserGroupInformation.createRemoteUser(username);
         SandboxAdminUtils.writeToDfsFile(fs, sandboxMetadataFilePath, sb.toString());
+        fs.setOwner(sandboxMetadataFilePath, username, null);
     }
 
     @VisibleForTesting
@@ -348,7 +366,7 @@ public class SandboxAdmin {
 
         String originalFid = SandboxTableUtils.getFidFromPath(fs, originalTablePath);
         SandboxTablesListManager originalSandboxListManager = SandboxTablesListManager
-                .forOriginalTable(fs, new Path(originalTablePath), originalFid, username);
+                .forOriginalTable(fs, originalTablePath, originalFid, username);
 
         return originalSandboxListManager.getListFromFile();
     }
@@ -366,9 +384,14 @@ public class SandboxAdmin {
 
         // read sandbox metadata
         EnumMap<SandboxTable.InfoType, String> info = SandboxTableUtils.readSandboxInfo(fs, sandboxTablePath);
-        final String originalFid = info.get(SandboxTable.InfoType.ORIGINAL_FID);
-        final Path originalPath = SandboxTableUtils.pathFromFid(fs, originalFid);
-        String originalTablePath = originalPath.toUri().toString();
+
+        if (info == null) {
+            throw new SandboxException("Unable to identify metadata file", null);
+        }
+//        final String originalFid = info.get(SandboxTable.InfoType.ORIGINAL_FID);
+//        final Path originalPath = SandboxTableUtils.pathFromFid(fs, originalFid);
+//        String originalTablePath = originalPath.toUri().toString();
+        final String originalTablePath = info.get(SandboxTable.InfoType.ORIGINAL_PATH);
 
         if (drillViewConverter == null) {
             LOG.info(LOG_MSG_PREFIX + "Connecting to Drill with connStr = " + drillConnectionString);

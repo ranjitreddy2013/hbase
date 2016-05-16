@@ -17,6 +17,7 @@ final public class SandboxTable {
 
     public enum InfoType {
         ORIGINAL_FID,
+        ORIGINAL_PATH,
         METAFILE_PATH,
         SANDBOX_FID,
         SANDBOX_STATE

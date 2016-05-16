@@ -233,9 +233,10 @@ public class HTable implements HTableInterface {
       EnumMap<SandboxTable.InfoType, String> info = SandboxTableUtils.readSandboxInfo(mfs, table);
 
       if (info != null) {
-        String originalTablePath = SandboxTableUtils
-                .pathFromFid(mfs, info.get(SandboxTable.InfoType.ORIGINAL_FID))
-                .toUri().toString();
+        String originalTablePath = info.get(SandboxTable.InfoType.ORIGINAL_PATH);
+//                SandboxTableUtils
+//                        .pathFromFid(mfs, info.get(SandboxTable.InfoType.ORIGINAL_FID))
+//                        .toUri().toString();
 
         AbstractHTable originalTable = initIfMapRTable(conf, TableName.valueOf(originalTablePath));
         SandboxTable.SandboxState state = SandboxTable.SandboxState

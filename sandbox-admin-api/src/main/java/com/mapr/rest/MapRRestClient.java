@@ -1,6 +1,9 @@
 package com.mapr.rest;
 
+import com.beust.jcommander.internal.Lists;
+import com.google.common.base.Joiner;
 import com.mapr.db.sandbox.SandboxException;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.http.HttpResponse;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -19,19 +22,25 @@ import org.codehaus.jettison.json.JSONArray;
 import org.codehaus.jettison.json.JSONException;
 import org.codehaus.jettison.json.JSONObject;
 
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
 import java.io.IOException;
 import java.security.KeyManagementException;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
+import java.util.List;
 
 public class MapRRestClient {
     final String username;
     private final String baseUrl;
 
-
     final HttpClient client;
 
-    public MapRRestClient(String[] hostnames, String username, String password) throws SandboxException {
+    public MapRRestClient(String[]hostnames, String username, String password) throws SandboxException {
+        this(new Configuration(), hostnames, username, password);
+    }
+
+    public MapRRestClient(Configuration conf, String[]hostnames, String username, String password) throws SandboxException {
         // TODO make sure we handle multiple endpoints
         this.baseUrl = String.format("https://%s/rest", hostnames[0]);
         this.username = username;
@@ -42,16 +51,25 @@ public class MapRRestClient {
         provider.setCredentials(AuthScope.ANY, credentials);
 
         try {
-            // TODO specify the supported ciphers in config
+            SSLContext sslContext = SSLContexts.custom()
+                    .loadTrustMaterial(new TrustSelfSignedStrategy()).build();
+            SSLEngine engine = sslContext.createSSLEngine();
+
+            final List<String> enabledCiphersList = Lists.newArrayList(engine.getEnabledCipherSuites());
+            enabledCiphersList.removeAll(Lists.newArrayList(conf.getStrings("hadoop.ssl.exclude.cipher.suites")));
+
+            final String[] enabledCipherSuits = new String[enabledCiphersList.size()];
+            enabledCiphersList.toArray(enabledCipherSuits);
+
             client = HttpClientBuilder.create()
-                    .setSSLSocketFactory(new SSLConnectionSocketFactory(
-                            SSLContexts.custom()
-                                    .loadTrustMaterial(new TrustSelfSignedStrategy()).build(),
-                            split(System.getProperty("https.protocols", "TLSv1.2")),
-                            split("TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA, TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384,TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA, TLS_ECDHE_RSA_WITH_RC4_128_SHA,TLS_RSA_WITH_AES_128_CBC_SHA256,TLS_RSA_WITH_AES_128_CBC_SHA, TLS_RSA_WITH_AES_256_CBC_SHA256,TLS_RSA_WITH_AES_256_CBC_SHA,SSL_RSA_WITH_RC4_128_SHA"),
-                            new NoopHostnameVerifier()))
-                    .setDefaultCredentialsProvider(provider)
-                    .build();
+                .setSSLSocketFactory(new SSLConnectionSocketFactory(
+                        sslContext,
+                        split(System.getProperty("https.protocols",
+                                Joiner.on(",").join(engine.getEnabledProtocols()))),
+                        enabledCipherSuits,
+                        new NoopHostnameVerifier()))
+                .setDefaultCredentialsProvider(provider)
+                .build();
         } catch (NoSuchAlgorithmException e) {
             throw new SandboxException("Could not create https client", e);
         } catch (KeyManagementException e) {
