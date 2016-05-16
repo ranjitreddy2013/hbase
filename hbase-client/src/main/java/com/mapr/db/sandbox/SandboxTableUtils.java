@@ -211,6 +211,6 @@ public class SandboxTableUtils {
     }
 
     public static byte[] generateTransactionId(Mutation mutation) {
-        return hashF.hashString(mutation.getId()).asBytes(); // TODO make sure about collisions
+        return hashF.hashString(mutation.toString()).asBytes();
     }
 }

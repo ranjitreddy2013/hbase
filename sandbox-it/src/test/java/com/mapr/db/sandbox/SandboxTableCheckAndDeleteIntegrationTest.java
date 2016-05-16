@@ -4,6 +4,7 @@ import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -104,6 +105,7 @@ public class SandboxTableCheckAndDeleteIntegrationTest extends BaseSandboxIntegr
     }
 
 
+    @Ignore
     @Test
     public void testCheckAndDeleteOnFilledOriginal() throws IOException, SandboxException {
         // CASE original filled, sandbox empty

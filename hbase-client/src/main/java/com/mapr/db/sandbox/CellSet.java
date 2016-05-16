@@ -6,9 +6,7 @@ import org.apache.hadoop.hbase.CellUtil;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.util.Bytes;
 
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.TreeSet;
+import java.util.*;
 
 /**
  * Stores a bunch of cells
@@ -53,6 +51,14 @@ public class CellSet implements Iterable<Cell> {
 
     TreeSet<Cell> cells = Sets.newTreeSet(CELL_FAM_COL_COMPARATOR);
 
+    public CellSet() {}
+
+    public CellSet(NavigableMap<byte[], List<Cell>> familyCellMap) {
+        for (List<Cell> cellList : familyCellMap.values()) {
+            addAll(cellList);
+        }
+    }
+
     public void add(Cell cell) {
         cells.add(cell);
     }
@@ -79,5 +85,9 @@ public class CellSet implements Iterable<Cell> {
         for (Cell cell : cells) {
             add(cell);
         }
+    }
+
+    public int size() {
+        return cells.size();
     }
 }

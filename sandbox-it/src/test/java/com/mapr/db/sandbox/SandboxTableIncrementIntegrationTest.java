@@ -19,7 +19,6 @@ import static org.junit.Assert.assertEquals;
 public class SandboxTableIncrementIntegrationTest extends BaseSandboxIntegrationTest {
     Scan scan = new Scan();
 
-    @Ignore
     @Test
     public void testIncrementOnEmptyOriginal() throws IOException, SandboxException {
         // CASE original empty, sandbox empty
@@ -80,13 +79,13 @@ public class SandboxTableIncrementIntegrationTest extends BaseSandboxIntegration
         assertEquals(1, getCellLongValue(hTable, newRowId, CF1, COL1));
     }
 
-    // TODO move this to the right class
-    @Ignore
+
+
     @Test
     public void testAllOrNothingIncrement() throws IOException {
         testAllOrNothingIncrementForTable(hTableMimic);
+        testAllOrNothingIncrementForTable(hTableSandbox);
     }
-
 
     private void testAllOrNothingIncrementForTable(HTable hTable) throws IOException {
         // make sure hTable has empty cells
@@ -102,8 +101,6 @@ public class SandboxTableIncrementIntegrationTest extends BaseSandboxIntegration
         assertEquals(2, getCellLongValue(hTable, newRowId, CF2, COL1));
         assertEquals(2, getCellLongValue(hTable, newRowId, CF2, COL2));
 
-        delRow(hTable, newRowId);
-
         setCellValue(hTable, newRowId, CF1, COL2, "sosasd");
 
         // increment will fail
@@ -114,11 +111,11 @@ public class SandboxTableIncrementIntegrationTest extends BaseSandboxIntegration
             System.out.println();
         }
 
-        // and no cells should have been updated
-        assertEquals(2, getCellLongValue(hTable, newRowId, CF1, COL1));
-        assertEquals(2, getCellLongValue(hTable, newRowId, CF1, COL2));
-        assertEquals(2, getCellLongValue(hTable, newRowId, CF2, COL1));
-        assertEquals(2, getCellLongValue(hTable, newRowId, CF2, COL2));
+        // and only int cells should have been updated
+        assertEquals(4, getCellLongValue(hTable, newRowId, CF1, COL1));
+        assertEquals("sosasd", getCellValue(hTable, newRowId, CF1, COL2));
+        assertEquals(4, getCellLongValue(hTable, newRowId, CF2, COL1));
+        assertEquals(4, getCellLongValue(hTable, newRowId, CF2, COL2));
     }
 
 
@@ -295,9 +292,24 @@ public class SandboxTableIncrementIntegrationTest extends BaseSandboxIntegration
     final byte[] colA = "colA".getBytes();
     final byte[] colB = "colB".getBytes();
 
-    @Ignore
     @Test
     public void testConcurrentIncrement() throws IOException {
+        testConcurrentIncrementForTable(hTableMimic);
+        testConcurrentIncrementForTable(hTableSandbox);
+    }
+
+    @Test
+    public void testConcurrentIncrementOnFilledOriginal() throws IOException {
+        // fill original
+        Put put = new Put(newRowId);
+        put.add(CF1, colA, Bytes.toBytes(0L));
+        put.add(CF1, colB, Bytes.toBytes(0L));
+
+        hTableMimic.put(put);
+        hTableMimic.flushCommits();
+        hTableOriginal.put(put);
+        hTableOriginal.flushCommits();
+
         testConcurrentIncrementForTable(hTableMimic);
         testConcurrentIncrementForTable(hTableSandbox);
     }
