@@ -48,6 +48,7 @@
       <id>philips-sandbox</id>
       <properties>
         <surefire.skipFirstPart>false</surefire.skipFirstPart>
+        <surefire.firstPartForkCount>2.5C</surefire.firstPartForkCount>
       </properties>
     </profile>
   </profiles>

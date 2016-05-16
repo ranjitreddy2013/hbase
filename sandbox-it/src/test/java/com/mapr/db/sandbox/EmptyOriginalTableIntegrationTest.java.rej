@@ -1,0 +1,48 @@
+diff a/sandbox-it/src/test/java/com/mapr/db/sandbox/EmptyOriginalTableIntegrationTest.java b/sandbox-it/src/test/java/com/mapr/db/sandbox/EmptyOriginalTableIntegrationTest.java	(rejected hunks)
+@@ -387,4 +387,45 @@ public class EmptyOriginalTableIntegrationTest extends BaseSandboxIntegrationTes
+                 "20".getBytes()));
+ 
+     }
++
++    @Test
++    public void testAppend() throws IOException {
++        HTable hTable = new HTable(conf, sandboxTablePath);
++        HTable originalHTable = new HTable(conf, originalTablePath);
++
++        final String testRow = "rowId1";
++
++        Result result;
++
++        // check there's nothing in the sandbox before the test
++        Get get = new Get(testRow.getBytes());
++
++        result = originalHTable.get(get);
++        assertTrue("original should not return any row", result.isEmpty());
++        result = hTable.get(get);
++        assertTrue("sandbox should not return any row", result.isEmpty());
++
++        // load sandbox table with a row
++        Put put = new Put(testRow.getBytes());
++        put.add(FAMILY_BYTES, "col".getBytes(), "1".getBytes());
++        hTable.put(put);
++        hTable.flushCommits();
++
++        // perform mutation
++        Append append = new Append(testRow.getBytes());
++        append.add(FAMILY_BYTES, "col".getBytes(), "20".getBytes());
++        append.add(FAMILY_BYTES, "col2".getBytes(), "456".getBytes());
++        hTable.append(append);
++
++        // verify things got changed
++        result = originalHTable.get(get);
++        assertTrue("original should not return any row", result.isEmpty());
++        result = hTable.get(get);
++        assertFalse("original should not return any row", result.isEmpty());
++
++        assertFalse("sandbox should return the mutations", result.isEmpty());
++        assertTrue("should contain the updated value",
++                CellUtil.matchingValue(result.getColumnLatestCell(FAMILY_BYTES, "col".getBytes()),
++                        "120".getBytes()));
++    }
+ }
+\ No newline at end of file

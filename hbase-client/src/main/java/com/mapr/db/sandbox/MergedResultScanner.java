@@ -1,4 +1,4 @@
-package com.mapr.db.shadow;
+package com.mapr.db.sandbox;
 
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;
@@ -8,7 +8,6 @@ import org.apache.hadoop.hbase.client.AbstractClientScanner;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
-import sun.security.provider.SHA;
 
 import java.io.IOException;
 import java.util.Comparator;
@@ -84,7 +83,7 @@ public class MergedResultScanner extends AbstractClientScanner implements Result
         // they are the same row
         boolean merged = false;
         while (last != null && rowComparator.compare(lastLast.getRow(), last.getRow()) == 0) {
-            result = ShadowTableUtils.mergeResult(lastLast, last);
+            result = SandboxHTable.mergeResult(lastLast, last);
             last = nextElement(finalIt);
 
             if (!result.isEmpty()) {
@@ -103,7 +102,7 @@ public class MergedResultScanner extends AbstractClientScanner implements Result
 
         if (!merged) {
             // makes sure it removes metadata cols as well
-            result = ShadowTableUtils.mergeResult(lastLast, new Result());
+            result = SandboxHTable.mergeResult(lastLast, new Result());
         }
 
         } catch (Exception ex) {

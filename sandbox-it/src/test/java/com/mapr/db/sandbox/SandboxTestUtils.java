@@ -1,5 +1,6 @@
 package com.mapr.db.sandbox;
 
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.client.HTableInterface;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
@@ -28,6 +29,16 @@ public class SandboxTestUtils {
         long result = 0L;
         for (Result r : scanner) {
             ++result;
+        }
+        return result;
+    }
+
+    public static long countCells(ResultScanner scanner) throws IOException {
+        long result = 0L;
+        for (Result r : scanner) {
+            for (Cell cell : r.listCells()) {
+                ++result;
+            }
         }
         return result;
     }

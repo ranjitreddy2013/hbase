@@ -18,45 +18,18 @@
  */
 package org.apache.hadoop.hbase.client;
 
-import java.io.Closeable;
-import java.io.IOException;
-import java.io.InterruptedIOException;
-import java.security.PrivilegedAction;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.TreeMap;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-import java.util.concurrent.SynchronousQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-
-import com.google.protobuf.InvalidProtocolBufferException;
-
-import com.mapr.db.shadow.ShadowTable;
-import com.mapr.db.shadow.ShadowTableUtils;
+import com.google.protobuf.*;
+import com.mapr.db.sandbox.SandboxHTable;
+import com.mapr.db.sandbox.SandboxTable;
+import com.mapr.db.sandbox.SandboxTableUtils;
+import com.mapr.fs.MapRFileSystem;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.classification.InterfaceAudience;
 import org.apache.hadoop.hbase.classification.InterfaceStability;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.Cell;
-import org.apache.hadoop.hbase.DoNotRetryIOException;
-import org.apache.hadoop.hbase.HBaseConfiguration;
-import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.HRegionInfo;
-import org.apache.hadoop.hbase.HRegionLocation;
-import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.KeyValue;
-import org.apache.hadoop.hbase.KeyValueUtil;
-import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.HConnectionManager.HConnectionImplementation;
 import org.apache.hadoop.hbase.client.coprocessor.Batch;
 import org.apache.hadoop.hbase.client.coprocessor.Batch.Callback;
@@ -83,10 +56,12 @@ import org.apache.hadoop.hbase.util.MapRUtil;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.Threads;
 
-import com.google.protobuf.Descriptors;
-import com.google.protobuf.Message;
-import com.google.protobuf.Service;
-import com.google.protobuf.ServiceException;
+import java.io.Closeable;
+import java.io.IOException;
+import java.io.InterruptedIOException;
+import java.security.PrivilegedAction;
+import java.util.*;
+import java.util.concurrent.*;
 
 /**
  * <p>Used to communicate with a single HBase table.  An implementation of
@@ -154,7 +129,7 @@ public class HTable implements HTableInterface {
   private boolean cleanupPoolOnClose; // shutdown the pool in close()
   private boolean cleanupConnectionOnClose; // close the connection in close()
 
-  private ShadowTable shadowTable;
+  private SandboxTable sandboxTable;
 
   /** The Async process for puts with autoflush set to false or multiputs */
   protected AsyncProcess<Object> ap;
@@ -206,7 +181,7 @@ public class HTable implements HTableInterface {
   public HTable(Configuration conf, final TableName tableName)
   throws IOException {
     if ((maprTable_ = initIfMapRTable(conf, tableName)) != null) {
-      checkForShadowTable(conf, maprTable_);
+      checkForSandboxTable(conf, maprTable_);
       return; // If it was a MapR table, our work is done
     }
 
@@ -235,8 +210,7 @@ public class HTable implements HTableInterface {
     // 'this.connection' must be set before initIfMapRTable() table is called to enable impersonation
     this.connection = connection;
     if ((maprTable_ = initIfMapRTable(connection.getConfiguration(), tableName)) != null) {
-      // If it was a MapR table, our work is done
-      checkForShadowTable(connection.getConfiguration(), maprTable_);
+      checkForSandboxTable(connection.getConfiguration(), maprTable_);
       return;
     }
 
@@ -249,18 +223,23 @@ public class HTable implements HTableInterface {
     this.finishSetup();
   }
 
-  private void checkForShadowTable(Configuration conf, AbstractHTable table) throws IOException {
-    // checks if table is shadow or not
-    String originalTablePath = ShadowTableUtils.originalTablePathFor(maprTable_);
+  private void checkForSandboxTable(Configuration conf, AbstractHTable table) throws IOException {
+    MapRFileSystem mfs = (MapRFileSystem) FileSystem.get(conf);
 
-    // if there's an original, it means that `table` is a shadow one
-    if (originalTablePath != null) {
-      try {
-        this.shadowTable = new ShadowTable(table,
-                initIfMapRTable(conf, TableName.valueOf(originalTablePath)));
-      } catch (Exception ex) {
-        LOG.error("Error creating original table representation", ex);
-      }
+    try {
+      EnumMap<SandboxTable.InfoType, String> info = SandboxTableUtils.readSandboxInfo(mfs, table);
+
+      String originalTablePath = SandboxTableUtils
+              .pathFromFid(mfs, info.get(SandboxTable.InfoType.ORIGINAL_FID))
+              .toUri().toString();
+
+      AbstractHTable originalTable = initIfMapRTable(conf,
+              TableName.valueOf(originalTablePath));
+      String proxyFid = info.get(SandboxTable.InfoType.PROXY_FID);
+
+      this.sandboxTable = new SandboxTable(table, originalTable, proxyFid);
+    } catch (Exception ex) {
+      LOG.error("Error creating original table representation", ex);
     }
   }
 
@@ -313,8 +292,7 @@ public class HTable implements HTableInterface {
   public HTable(Configuration conf, final TableName tableName, final ExecutorService pool)
       throws IOException {
     if ((maprTable_ = initIfMapRTable(conf, tableName)) != null) {
-      // If it was a MapR table, our work is done
-      checkForShadowTable(conf, maprTable_);
+      checkForSandboxTable(conf, maprTable_);
       return;
     }
     this.connection = HConnectionManager.getConnection(conf);
@@ -381,8 +359,7 @@ public class HTable implements HTableInterface {
     // 'this.connection' must be set before initIfMapRTable() table is called to enable impersonation
     this.connection = connection;
     if ((maprTable_ = initIfMapRTable(connection.getConfiguration(), tableName)) != null) {
-      // If it was a MapR table, our work is done
-      checkForShadowTable(connection.getConfiguration(), maprTable_);
+      checkForSandboxTable(connection.getConfiguration(), maprTable_);
       return;
     }
 
@@ -884,6 +861,9 @@ public class HTable implements HTableInterface {
    public Result getRowOrBefore(final byte[] row, final byte[] family)
    throws IOException {
      if (maprTable_ != null) {
+       if (sandboxTable != null) {
+         return SandboxHTable.getRowOrBefore(sandboxTable, row, family);
+       }
        return maprTable_.getRowOrBefore(row, family);
      }
      RegionServerCallable<Result> callable = new RegionServerCallable<Result>(this.connection,
@@ -903,8 +883,8 @@ public class HTable implements HTableInterface {
   @Override
   public ResultScanner getScanner(final Scan scan) throws IOException {
     if (maprTable_ != null) {
-      if (shadowTable != null) {
-        return ShadowTableUtils.getScanner(shadowTable, scan);
+      if (sandboxTable != null) {
+        return SandboxHTable.getScanner(sandboxTable, scan);
       }
       return maprTable_.getScanner(scan);
     }
@@ -958,8 +938,8 @@ public class HTable implements HTableInterface {
   @Override
   public Result get(final Get get) throws IOException {
     if (maprTable_ != null) {
-      if (shadowTable != null) {
-        return ShadowTableUtils.get(shadowTable, get);
+      if (sandboxTable != null) {
+        return SandboxHTable.get(sandboxTable, get);
       }
       return maprTable_.get(get);
     }
@@ -984,8 +964,8 @@ public class HTable implements HTableInterface {
   @Override
   public Result[] get(List<Get> gets) throws IOException {
     if (maprTable_ != null) {
-      if (shadowTable != null) {
-        return ShadowTableUtils.get(shadowTable, gets);
+      if (sandboxTable != null) {
+        return SandboxHTable.get(sandboxTable, gets);
       }
       return maprTable_.get(gets);
     }
@@ -1037,6 +1017,7 @@ public class HTable implements HTableInterface {
       final List<? extends Row> actions, final Object[] results, final Batch.Callback<R> callback)
       throws IOException, InterruptedException {
     if (maprTable_ != null) {
+      // TODO sandbox?
       //TODO(nagrawal): callback is ignored.
       maprTable_.batch(actions, results);
       return;
@@ -1071,8 +1052,8 @@ public class HTable implements HTableInterface {
   public void delete(final Delete delete)
   throws IOException {
     if (maprTable_ != null) {
-      if (shadowTable != null) {
-        ShadowTableUtils.delete(shadowTable, delete);
+      if (sandboxTable != null) {
+        SandboxHTable.delete(sandboxTable, delete);
         return;
       }
       maprTable_.delete(delete);
@@ -1103,9 +1084,8 @@ public class HTable implements HTableInterface {
   public void delete(final List<Delete> deletes)
   throws IOException {
     if (maprTable_ != null) {
-      if (shadowTable != null) {
-        //TODO
-//        ShadowTableUtils.delete(shadowTable, delete);
+      if (sandboxTable != null) {
+        SandboxHTable.delete(sandboxTable, deletes);
         return;
       }
       maprTable_.delete(deletes);
@@ -1136,8 +1116,8 @@ public class HTable implements HTableInterface {
   public void put(final Put put)
       throws InterruptedIOException, RetriesExhaustedWithDetailsException {
     if (maprTable_ != null) {
-      if (shadowTable != null) {
-        ShadowTableUtils.put(shadowTable, put);
+      if (sandboxTable != null) {
+        SandboxHTable.put(sandboxTable, put);
         return;
       }
       maprTable_.put(put);
@@ -1156,6 +1136,10 @@ public class HTable implements HTableInterface {
   public void put(final List<Put> puts)
       throws InterruptedIOException, RetriesExhaustedWithDetailsException {
     if (maprTable_ != null) {
+      if (sandboxTable != null) {
+        SandboxHTable.put(sandboxTable, puts);
+        return;
+      }
       maprTable_.put(puts);
       return;
     }
@@ -1247,6 +1231,10 @@ public class HTable implements HTableInterface {
   @Override
   public void mutateRow(final RowMutations rm) throws IOException {
     if (maprTable_ != null) {
+      if (sandboxTable != null) {
+        SandboxHTable.mutateRow(sandboxTable, rm);
+        return;
+      }
       maprTable_.mutateRow(rm);
       return;
     }
@@ -1289,6 +1277,9 @@ public class HTable implements HTableInterface {
           "Invalid arguments to append, no columns specified");
     }
     if (maprTable_ != null) {
+      if (sandboxTable != null) {
+        return SandboxHTable.append(sandboxTable, append);
+      }
       return maprTable_.append(append);
     }
 
@@ -1323,6 +1314,9 @@ public class HTable implements HTableInterface {
           "Invalid arguments to increment, no columns specified");
     }
     if (maprTable_ != null) {
+      if (sandboxTable != null) {
+        return SandboxHTable.increment(sandboxTable, increment);
+      }
       return maprTable_.increment(increment);
     }
     NonceGenerator ng = this.connection.getNonceGenerator();
@@ -1387,6 +1381,10 @@ public class HTable implements HTableInterface {
           "Invalid arguments to incrementColumnValue", npe);
     }
     if (maprTable_ != null) {
+      if (sandboxTable != null) {
+        return SandboxHTable.incrementColumnValue(sandboxTable, row, family, qualifier, amount,
+                durability);
+      }
       return maprTable_.incrementColumnValue(row, family, qualifier, amount,
         durability);
     }
@@ -1423,6 +1421,9 @@ public class HTable implements HTableInterface {
       final Put put)
   throws IOException {
     if (maprTable_ != null) {
+      if (sandboxTable != null) {
+        return SandboxHTable.checkAndPut(sandboxTable, row, family, qualifier, value, put);
+      }
       return maprTable_.checkAndPut(row, family, qualifier, value, put);
     }
     RegionServerCallable<Boolean> callable =
@@ -1454,6 +1455,9 @@ public class HTable implements HTableInterface {
       final Delete delete)
   throws IOException {
     if (maprTable_ != null) {
+      if (sandboxTable != null) {
+        return SandboxHTable.checkAndDelete(sandboxTable, row, family, qualifier, value, delete);
+      }
       return maprTable_.checkAndDelete(row, family, qualifier, value, delete);
     }
     RegionServerCallable<Boolean> callable =
@@ -1483,6 +1487,9 @@ public class HTable implements HTableInterface {
       final CompareOp compareOp, final byte [] value, final RowMutations rm)
   throws IOException {
     if (maprTable_ != null) {
+      if (sandboxTable != null) {
+        return SandboxHTable.checkAndMutate(sandboxTable, row, family, qualifier, compareOp, value, rm);
+      }
       return maprTable_.checkAndMutate(row, family, qualifier, compareOp, value, rm);
     }
     RegionServerCallable<Boolean> callable =
@@ -1521,6 +1528,9 @@ public class HTable implements HTableInterface {
   @Override
   public boolean exists(final Get get) throws IOException {
     if (maprTable_ != null) {
+      if (sandboxTable != null) {
+        return SandboxHTable.exists(sandboxTable, get);
+      }
       return maprTable_.exists(get);
     }
     get.setCheckExistenceOnly(true);
@@ -1538,6 +1548,9 @@ public class HTable implements HTableInterface {
     if (gets.size() == 1) return new Boolean[]{exists(gets.get(0))};
 
     if (maprTable_ != null) {
+      if (sandboxTable != null) {
+        return SandboxHTable.exists(sandboxTable, gets);
+      }
       return maprTable_.exists(gets);
     }
 

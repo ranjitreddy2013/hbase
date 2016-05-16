@@ -9,6 +9,8 @@ import com.mapr.cli.DbUpstreamCommands;
 import com.mapr.cliframework.base.*;
 import com.mapr.db.sandbox.utils.SandboxAdminUtils;
 import com.mapr.fs.MapRFileSystem;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -20,24 +22,28 @@ import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.EnumMap;
 import java.util.Map;
 import java.util.TreeSet;
 
 public class SandboxAdmin {
+    private static final Log LOG = LogFactory.getLog(SandboxAdmin.class);
+
     private static final long REPLICA_WAIT_POLL_INTERVAL = 3000L;
+    private static final long REPLICA_TO_PROXY_WAIT_TIME = 12000L;
 
     MapRFileSystem fs;
     ProxyManager pm;
     CLICommandFactory cmdFactory = CLICommandFactory.getInstance();
 
     public void createSandbox(String sandboxTablePath, String originalTablePath) throws SandboxException, IOException {
-        String originalFid = SandboxAdminUtils.getFidFromPath(fs, originalTablePath);
+        String originalFid = SandboxTableUtils.getFidFromPath(fs, originalTablePath);
 
         createEmptySandboxTable(sandboxTablePath, originalTablePath);
 
         // creates proxy if needed, selects best proxy and creates all replication flows (sand -> proxy -> original)
-        setupProxy(sandboxTablePath, originalFid);
-        writeSandboxMetadataFile(sandboxTablePath, originalTablePath);
+        ProxyManager.ProxyInfo proxyInfo = setupProxy(sandboxTablePath, originalFid);
+        writeSandboxMetadataFile(sandboxTablePath, originalFid, proxyInfo);
     }
 
     /**
@@ -49,8 +55,8 @@ public class SandboxAdmin {
      * @throws SandboxException
      */
     @VisibleForTesting
-    void setupProxy(String sandboxTablePath, String originalFid) throws IOException, SandboxException {
-        Path originalPath = SandboxAdminUtils.pathFromFid(fs, originalFid);
+    ProxyManager.ProxyInfo setupProxy(String sandboxTablePath, String originalFid) throws IOException, SandboxException {
+        Path originalPath = SandboxTableUtils.pathFromFid(fs, originalFid);
 
         TreeSet<ProxyManager.ProxyInfo> proxies = pm.loadProxyInfo(cmdFactory, originalFid, originalPath);
 
@@ -64,6 +70,8 @@ public class SandboxAdmin {
 
         // wire proxy
         SandboxAdminUtils.setupReplication(cmdFactory, sandboxTablePath, selectedProxy.proxyTablePath, true);
+
+        return selectedProxy;
     }
 
     /**
@@ -72,7 +80,12 @@ public class SandboxAdmin {
      * @param wait
      */
     public void pushSandbox(String sandboxTablePath, boolean wait) throws IOException, SandboxException {
-        String originalTablePath = originalTablePathForSandbox(fs, sandboxTablePath);
+        EnumMap<SandboxTable.InfoType, String> info = SandboxTableUtils.readSandboxInfo(fs, sandboxTablePath);
+
+        String proxyFid = info.get(SandboxTable.InfoType.PROXY_FID);
+        Path proxyPath = SandboxTableUtils.pathFromFid(fs, proxyFid);
+        String proxyTablePath = proxyPath.toUri().toString();
+
 
         // TODO add flag 'force' to make sure all the modifications have a recent timestamp? (pending on testing scenarios)
 
@@ -82,7 +95,7 @@ public class SandboxAdmin {
         ProcessedInput delMetadataCFInput = new ProcessedInput(new String[] {
                 "table", "cf", "delete",
                 "-path", sandboxTablePath,
-                "-cfname", "_shadow" // TODO repl this with constant
+                "-cfname", SandboxTable.DEFAULT_META_CF_NAME
         });
 
         try {
@@ -97,7 +110,7 @@ public class SandboxAdmin {
         ProcessedInput resumeReplicaInput = new ProcessedInput(new String[] {
                 "table", "replica", "resume",
                 "-path", sandboxTablePath,
-                "-replica", originalTablePath
+                "-replica", proxyTablePath
         });
 
         try {
@@ -122,6 +135,24 @@ public class SandboxAdmin {
                 }
 
                 bytesPending = _getReplicationBytesPending(sandboxTablePath);
+            }
+
+            try {
+                Thread.sleep(REPLICA_TO_PROXY_WAIT_TIME);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
+            LOG.info("Waiting for proxy table to finish replication");
+            bytesPending = _getReplicationBytesPending(proxyTablePath);
+            while (bytesPending > 0) {
+                try {
+                    Thread.sleep(REPLICA_WAIT_POLL_INTERVAL);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                bytesPending = _getReplicationBytesPending(proxyTablePath);
             }
         }
 
@@ -164,14 +195,17 @@ public class SandboxAdmin {
     }
 
     public void deleteSandbox(String sandboxTablePath) throws IOException {
-        String originalTablePath = originalTablePathForSandbox(fs, sandboxTablePath);
+        EnumMap<SandboxTable.InfoType, String> info = SandboxTableUtils.readSandboxInfo(fs, sandboxTablePath);
+
+        String proxyFid = info.get(SandboxTable.InfoType.PROXY_FID);
+        Path proxyTablePath = SandboxTableUtils.pathFromFid(fs, proxyFid);
 
         CommandOutput commandOutput = null;
 
-        // Remove upstream
+        // Remove upstream to proxy
         ProcessedInput removeUpstreamInput = new ProcessedInput(new String[] {
                 "table", "upstream", "remove",
-                "-path", originalTablePath,
+                "-path", proxyTablePath.toUri().toString(),
                 "-upstream", sandboxTablePath
         });
 
@@ -183,21 +217,26 @@ public class SandboxAdmin {
             e.printStackTrace(); // TODO handle properly
         }
 
+        // delete metadata file FIRST
+        Path metadataFilePath = SandboxTableUtils.metafilePath(fs, sandboxTablePath);
+        fs.delete(metadataFilePath, false);
 
+        // deletes sandbox
         deleteTable(sandboxTablePath);
 
-        // delete metadata file
-        Path metadataFilePath = metadataFilePathForSandboxTable(sandboxTablePath);
-        fs.delete(metadataFilePath, false);
+        // TODO do something with proxy?!
+//        String originalTablePath = info.get(SandboxTable.InfoType.ORIGINAL_FID);
     }
 
     // TODO put this in common project
-    public static String originalTablePathForSandbox(FileSystem fs, String sandboxTablePath) throws IOException {
-        Path metadataFilePath = metadataFilePathForSandboxTable(sandboxTablePath);
+    public static String originalTablePathForSandbox(MapRFileSystem fs, String sandboxTablePath) throws IOException {
+        Path metadataFilePath = SandboxTableUtils.metafilePath(fs, sandboxTablePath);
 
         BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open(metadataFilePath)));
         // TODO ^^^ this might file as the metadataFile might not exist... should yield an error
         String originalPath = reader.readLine();
+
+
 
         if (!fs.exists(new Path(originalPath))) {
             throw new IOException(String.format("Original table %s does not exist for sandbox %s.",
@@ -205,13 +244,6 @@ public class SandboxAdmin {
         }
 
         return originalPath;
-    }
-
-    public static Path metadataFilePathForSandboxTable(String sandboxTablePath) {
-        Path sandboxPath = new Path(sandboxTablePath);
-        Path sandboxDirectoryPath = sandboxPath.getParent();
-        // TODO path should be returned by the same function as the client, to make sure same logic is used
-        return new Path(sandboxDirectoryPath, sandboxPath.getName() + "_meta");
     }
 
     @VisibleForTesting
@@ -230,10 +262,15 @@ public class SandboxAdmin {
     }
 
     @VisibleForTesting
-    void writeSandboxMetadataFile(String sandboxTablePath, String originalTablePath) {
-        Path sandboxMetadataFilePath = metadataFilePathForSandboxTable(sandboxTablePath);
-        // content contains path to the original table
-        SandboxAdminUtils.writeToDfsFile(fs, sandboxMetadataFilePath, originalTablePath);
+    void writeSandboxMetadataFile(String sandboxTablePath, String originalFid, ProxyManager.ProxyInfo proxyInfo) throws IOException {
+        Path sandboxMetadataFilePath = SandboxTableUtils.metafilePath(fs, sandboxTablePath);
+
+        // content contains FID to original table in the 1st line and FID of the proxy in the second line
+        StringBuffer sb = new StringBuffer()
+                .append(originalFid).append("\n")
+                .append(proxyInfo.getProxyFid());
+
+        SandboxAdminUtils.writeToDfsFile(fs, sandboxMetadataFilePath, sb.toString());
     }
 
 
@@ -254,7 +291,7 @@ public class SandboxAdmin {
         SandboxAdminUtils.createSimilarTable(cmdFactory, sandboxTablePath, originalTablePath);
 
         // create metadata CF
-        SandboxAdminUtils.createTableCF(cmdFactory, sandboxTablePath, "_shadow");
+        SandboxAdminUtils.createTableCF(cmdFactory, sandboxTablePath, SandboxTable.DEFAULT_META_CF_NAME);
     }
 
     public void deleteTable(String tablePath) {
@@ -268,7 +305,6 @@ public class SandboxAdmin {
         try {
             DbCommands tableDeleteCmd = (DbCommands) cmdFactory.getCLI(tableDeleteInput);
             commandOutput = tableDeleteCmd.executeRealCommand();
-            System.out.println(commandOutput.toPrettyString());
         } catch (Exception e) {
             e.printStackTrace(); // TODO handle properly
         }
@@ -282,7 +318,7 @@ public class SandboxAdmin {
     }
 
     public void info(String originalTablePath) throws IOException, SandboxException {
-        String originalFid = SandboxAdminUtils.getFidFromPath(fs, originalTablePath);
+        String originalFid = SandboxTableUtils.getFidFromPath(fs, originalTablePath);
         Map<String, Object> props = Maps.newHashMap();
         props.put("fid", originalFid);
         props.put("path", originalTablePath);

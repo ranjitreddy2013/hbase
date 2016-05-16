@@ -1,7 +1,8 @@
-package com.mapr.db.shadow;
+package com.mapr.db.sandbox;
 
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;
+import com.mapr.db.sandbox.MergedResultScanner.AnnotatedResult;
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.Result;
@@ -9,12 +10,12 @@ import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
 import org.junit.Before;
 import org.junit.Test;
-import com.mapr.db.shadow.MergedResultScanner.AnnotatedResult;
 
 import java.io.IOException;
 
 import static org.junit.Assert.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 public class MergedResultScannerTest {
     ResultScanner mShadow;

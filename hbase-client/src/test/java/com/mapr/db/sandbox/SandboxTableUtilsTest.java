@@ -1,4 +1,4 @@
-package com.mapr.db.shadow;
+package com.mapr.db.sandbox;
 
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;
@@ -8,21 +8,21 @@ import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.client.mapr.AbstractHTable;
 import org.junit.Before;
 import org.junit.Test;
-import org.mockito.verification.VerificationMode;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.*;
 
-public class ShadowTableUtilsTest {
+public class SandboxTableUtilsTest {
     AbstractHTable shadowTableTable;
     AbstractHTable originalTable;
-    ShadowTable shadowTable;
+    SandboxTable sandboxTable;
+    String proxyFid = "someFid";
 
     @Before
     public void setup() {
         shadowTableTable = mock(AbstractHTable.class);
         originalTable = mock(AbstractHTable.class);
-        shadowTable = new ShadowTable(shadowTableTable, originalTable);
+        sandboxTable = new SandboxTable(shadowTableTable, originalTable, proxyFid);
     }
 
 //    @Test
@@ -43,7 +43,7 @@ public class ShadowTableUtilsTest {
         when(originalTable.get(any(Get.class))).thenReturn(originalResult);
         when(shadowTableTable.get(any(Get.class))).thenReturn(Result.EMPTY_RESULT);
 
-        Result result = ShadowTableUtils.get(shadowTable, get);
+        Result result = SandboxHTable.get(sandboxTable, get);
 
         // both tables are called
         verify(shadowTableTable).get(get);
@@ -57,19 +57,19 @@ public class ShadowTableUtilsTest {
     public void testEnrichedGet() throws Exception {
         AbstractHTable shadowTableTable = mock(AbstractHTable.class);
         AbstractHTable originalTable = mock(AbstractHTable.class);
-        ShadowTable shadowTable = new ShadowTable(shadowTableTable, originalTable);
+        SandboxTable sandboxTable = new SandboxTable(shadowTableTable, originalTable, proxyFid);
 
         Get get = mock(Get.class);
         when(get.hasFamilies()).thenReturn(false);
-        Result result = ShadowTableUtils.get(shadowTable, get);
+        Result result = SandboxHTable.get(sandboxTable, get);
         verify(get).hasFamilies();
         verify(get, never()).addFamily(any(byte[].class));
 
         Get get2 = mock(Get.class);
         when(get2.hasFamilies()).thenReturn(true);
-        result = ShadowTableUtils.get(shadowTable, get2);
+        result = SandboxHTable.get(sandboxTable, get2);
         verify(get2).hasFamilies();
-        verify(get2).addFamily(eq(ShadowTableUtils.DEFAULT_META_CF));
+        verify(get2).addFamily(eq(SandboxTable.DEFAULT_META_CF));
     }
 
     @Test
@@ -85,19 +85,19 @@ public class ShadowTableUtilsTest {
         // equals
         cellA = new KeyValue(rowKey, qual1, col1);
         cellB = new KeyValue(rowKey, qual1, col1);
-        assertEquals(ShadowTableUtils.SAME_ROW_CELL_COMPARATOR.compare(cellA, cellB), 0);
+        assertEquals(SandboxHTable.SAME_ROW_CELL_COMPARATOR.compare(cellA, cellB), 0);
 
         // equals
         cellA = new KeyValue(rowKey, qual1, col1);
         cellB = new KeyValue(rowKey, qual1, col2);
-        assertEquals(ShadowTableUtils.SAME_ROW_CELL_COMPARATOR.compare(cellA, cellB), -1);
-        assertEquals(ShadowTableUtils.SAME_ROW_CELL_COMPARATOR.compare(cellB, cellA), 1);
+        assertEquals(SandboxHTable.SAME_ROW_CELL_COMPARATOR.compare(cellA, cellB), -1);
+        assertEquals(SandboxHTable.SAME_ROW_CELL_COMPARATOR.compare(cellB, cellA), 1);
 
         // equals
         cellA = new KeyValue(rowKey, qual1, col1);
         cellB = new KeyValue(rowKey, qual2, col1);
-        assertEquals(ShadowTableUtils.SAME_ROW_CELL_COMPARATOR.compare(cellA, cellB), -1);
-        assertEquals(ShadowTableUtils.SAME_ROW_CELL_COMPARATOR.compare(cellB, cellA), 1);
+        assertEquals(SandboxHTable.SAME_ROW_CELL_COMPARATOR.compare(cellA, cellB), -1);
+        assertEquals(SandboxHTable.SAME_ROW_CELL_COMPARATOR.compare(cellB, cellA), 1);
     }
 
     @Test
@@ -105,7 +105,7 @@ public class ShadowTableUtilsTest {
         Result shadowResult = Result.create(new Cell[] {});
         Result originalResult = Result.create(new Cell[] {});
 
-        Result result = ShadowTableUtils.mergeResult(shadowResult, originalResult);
+        Result result = SandboxHTable.mergeResult(shadowResult, originalResult);
         assertEquals(Result.EMPTY_RESULT.listCells(), result.listCells());
     }
 
@@ -117,13 +117,13 @@ public class ShadowTableUtilsTest {
         Result shadowResult = Result.create(new Cell[] { cellA });
         Result originalResult = Result.create(new Cell[] {});
 
-        Result result = ShadowTableUtils.mergeResult(shadowResult, originalResult);
+        Result result = SandboxHTable.mergeResult(shadowResult, originalResult);
         assertEquals(Lists.newArrayList(cellA), result.listCells());
 
-        result = ShadowTableUtils.mergeResult(originalResult, shadowResult);
+        result = SandboxHTable.mergeResult(originalResult, shadowResult);
         assertEquals(Lists.newArrayList(cellA), result.listCells());
 
-        result = ShadowTableUtils.mergeResult(shadowResult, null);
+        result = SandboxHTable.mergeResult(shadowResult, null);
         assertEquals(Lists.newArrayList(cellA), result.listCells());
     }
 
@@ -136,7 +136,7 @@ public class ShadowTableUtilsTest {
         Result shadowResult = Result.create(new Cell[] { cellA });
         Result originalResult = Result.create(new Cell[] { cellB });
 
-        Result result = ShadowTableUtils.mergeResult(shadowResult, originalResult);
+        Result result = SandboxHTable.mergeResult(shadowResult, originalResult);
         assertEquals(Lists.newArrayList(cellA), result.listCells());
     }
 
@@ -145,18 +145,18 @@ public class ShadowTableUtilsTest {
         byte[] rowKey = "rowKey".getBytes();
         Cell cellA = new KeyValue(rowKey, "f".getBytes(), "q".getBytes(), "v2".getBytes());
         Cell cellB = new KeyValue(rowKey, "f".getBytes(), "q".getBytes(), "v0".getBytes());
-        Cell cellAMarkedAsDeleted = new KeyValue(rowKey, ShadowTableUtils.DEFAULT_META_CF, "f:q".getBytes(), "1".getBytes());
+        Cell cellAMarkedAsDeleted = new KeyValue(rowKey, SandboxTable.DEFAULT_META_CF, "f:q".getBytes(), "1".getBytes());
 
         Result shadowResult = Result.create(new Cell[] { cellA, cellAMarkedAsDeleted });
         Result originalResult = Result.create(new Cell[] { cellB });
 
-        Result result = ShadowTableUtils.mergeResult(shadowResult, originalResult);
+        Result result = SandboxHTable.mergeResult(shadowResult, originalResult);
         assertEquals(Result.EMPTY_RESULT.listCells(), result.listCells());
 
         shadowResult = Result.create(new Cell[] { cellA, cellAMarkedAsDeleted });
         originalResult = Result.create(new Cell[] { });
 
-        result = ShadowTableUtils.mergeResult(shadowResult, originalResult);
+        result = SandboxHTable.mergeResult(shadowResult, originalResult);
         assertEquals(Result.EMPTY_RESULT.listCells(), result.listCells());
     }
 
@@ -170,7 +170,7 @@ public class ShadowTableUtilsTest {
         when(originalTable.getScanner(eq(scan))).thenReturn(origResultScanner);
         when(shadowTableTable.getScanner(any(Scan.class))).thenReturn(shadowResultScanner);
 
-        ResultScanner result = ShadowTableUtils.getScanner(shadowTable, scan);
+        ResultScanner result = SandboxHTable.getScanner(sandboxTable, scan);
 
         // verify scanners are retrieved from both
         verify(originalTable).getScanner(eq(scan));
@@ -186,7 +186,7 @@ public class ShadowTableUtilsTest {
         when(originalTable.getScanner(eq(scan))).thenReturn(origResultScanner);
         when(shadowTableTable.getScanner(any(Scan.class))).thenReturn(shadowResultScanner);
 
-        ResultScanner result = ShadowTableUtils.getScanner(shadowTable, scan);
+        ResultScanner result = SandboxHTable.getScanner(sandboxTable, scan);
 
         // verify scanners are retrieved from both
         verify(originalTable).getScanner(eq(scan));
@@ -210,7 +210,7 @@ public class ShadowTableUtilsTest {
         Delete delete = new Delete(rowKey);
         delete.deleteColumn(familyQualifier, column);
 
-        ShadowTableUtils.delete(shadowTable, delete);
+        SandboxHTable.delete(sandboxTable, delete);
 
         // verify the delete is called on the shadow table
         verify(shadowTableTable).delete(eq(delete));
@@ -236,7 +236,7 @@ public class ShadowTableUtilsTest {
         delete.deleteFamily(familyQualifier);
 
 
-        ShadowTableUtils.delete(shadowTable, delete);
+        SandboxHTable.delete(sandboxTable, delete);
 
         // verify the delete is called on the shadow table
         verify(shadowTableTable).delete(eq(delete));
@@ -262,7 +262,7 @@ public class ShadowTableUtilsTest {
         Put put = new Put(rowKey);
         put.add(familyQualifier, column, "someValue".getBytes());
 
-        ShadowTableUtils.put(shadowTable, put);
+        SandboxHTable.put(sandboxTable, put);
 
         // verify the markedAsDeleted is always removed
         verify(shadowTableTable).delete(any(Delete.class));

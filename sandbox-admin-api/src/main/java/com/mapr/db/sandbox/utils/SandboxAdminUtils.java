@@ -16,22 +16,6 @@ import java.io.FileWriter;
 import java.io.IOException;
 
 public class SandboxAdminUtils {
-    public static Path pathFromFid(MapRFileSystem mfs, String originalFid) throws IOException {
-        try {
-            return new Path(mfs.getMountPathFid(originalFid));
-        } catch (IOException e) {
-            throw new IOException(String.format("Could not resolve path for original table FID %s", originalFid), e);
-        }
-    }
-
-    public static String getFidFromPath(MapRFileSystem fs, String originalTablePath) throws IOException {
-        try {
-            return fs.getMapRFileStatus(new Path(originalTablePath)).getFidStr();
-        } catch (IOException e) {
-            throw new IOException("Could not grab FID from original table", e);
-        }
-    }
-
     public static void printErrors(CommandOutput commandOutput) {
         if (commandOutput != null) {
             for (String msg : commandOutput.getOutput().getMessages()) {

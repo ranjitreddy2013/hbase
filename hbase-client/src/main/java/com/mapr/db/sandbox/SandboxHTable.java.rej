@@ -1,0 +1,59 @@
+diff a/hbase-client/src/main/java/com/mapr/db/sandbox/SandboxHTable.java b/hbase-client/src/main/java/com/mapr/db/sandbox/SandboxHTable.java	(rejected hunks)
+@@ -271,9 +286,54 @@ public class SandboxHTable {
+         sandboxTable.table.mutateRow(finalRm);
+     }
+ 
+-    public static Result append(SandboxTable sandboxTable, Append append) {
+-        // TODO
+-        return null;
++    public static Result append(SandboxTable sandboxTable, Append append) throws IOException {
++        byte[] rowId = append.getRow();
++        // fetch which columns are going to be appended
++        NavigableMap<byte[], List<Cell>> familyCellMap = append.getFamilyCellMap();
++
++        RowMutations rowMutations = new RowMutations(rowId);
++
++        // fetch the column versions from both sides
++        Get get = new Get(rowId);
++        for (byte[] family : familyCellMap.keySet()) {
++            List<Cell> cellToAppend = familyCellMap.get(family);
++
++            for (Cell cell : cellToAppend) {
++                byte[] qualifier = CellUtil.cloneQualifier(cell);
++                get.addColumn(family, qualifier);
++            }
++        }
++
++        // fetch merged result
++        Result result = get(sandboxTable, get);
++
++        for (byte[] family : familyCellMap.keySet()) {
++            List<Cell> cellToAppend = familyCellMap.get(family);
++
++            for (Cell cell : cellToAppend) {
++                byte[] qualifier = CellUtil.cloneQualifier(cell);
++
++                // get cell from merged result
++                Cell lastVersionCell = result.getColumnLatestCell(family, qualifier);
++
++                byte[] existingValue = new byte[0];
++                if (lastVersionCell != null) {
++                    existingValue = CellUtil.cloneValue(lastVersionCell);
++                }
++                byte[] appendValue = CellUtil.cloneValue(cell);
++
++                byte[] resultValue = new byte[existingValue.length + appendValue.length];
++                System.arraycopy(existingValue, 0, resultValue, 0, existingValue.length);
++                System.arraycopy(appendValue, 0, resultValue, existingValue.length, appendValue.length);
++
++                Put put = new Put(rowId);
++                put.add(family, qualifier, resultValue);
++                rowMutations.add(put);
++            }
++        }
++
++        mutateRow(sandboxTable, rowMutations);
++        return get(sandboxTable, get);
+     }
+ 
+     public static Result increment(SandboxTable sandboxTable, Increment increment) {

@@ -49,7 +49,7 @@ public class ProxyManager {
         if (upstreamCount < LIMIT_UPSTREAM_TABLES) {
             ProxyInfo proxyInfo = new ProxyInfo();
             proxyInfo.originalTablePath = originalPath.toUri().toString();
-            proxyInfo.originalFid = SandboxAdminUtils.getFidFromPath(fs, proxyInfo.originalTablePath);
+            proxyInfo.originalFid = SandboxTableUtils.getFidFromPath(fs, proxyInfo.originalTablePath);
 
             String proxyTableName = String.format(PROXY_TABLENAME_F, proxyInfo.originalFid, proxies.size());
             Path proxyTable = new Path(originalPath.getParent(), proxyTableName);
@@ -58,7 +58,7 @@ public class ProxyManager {
             // create proxy table
             SandboxAdminUtils.createSimilarTable(cmdFactory, proxyInfo.proxyTablePath, proxyInfo.originalTablePath);
 
-            proxyInfo.proxyFid = SandboxAdminUtils.getFidFromPath(fs, proxyInfo.proxyTablePath);
+            proxyInfo.proxyFid = SandboxTableUtils.getFidFromPath(fs, proxyInfo.proxyTablePath);
 
             // setup replication to original
             SandboxAdminUtils.setupReplication(cmdFactory, proxyInfo.proxyTablePath, proxyInfo.originalTablePath, false);
@@ -167,7 +167,7 @@ public class ProxyManager {
                 while ((line = br.readLine()) != null) {
                     ProxyInfo proxyInfo = new ProxyInfo();
                     proxyInfo.proxyFid = line;
-                    Path proxyPath = SandboxAdminUtils.pathFromFid(fs, proxyInfo.proxyFid);
+                    Path proxyPath = SandboxTableUtils.pathFromFid(fs, proxyInfo.proxyFid);
                     proxyInfo.proxyTablePath = proxyPath.toUri().toString();
                     proxyInfo.upstreamCount = calcUpstreamCount(cmdFactory, proxyPath);
 
