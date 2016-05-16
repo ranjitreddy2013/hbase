@@ -145,6 +145,12 @@
               </sources>
             </mapping>
             <mapping>
+              <directory>${install.prefix}/logs</directory>
+              <filemode>775</filemode>
+              <username>mapr</username>
+              <groupname>mapr</groupname>
+            </mapping>
+            <mapping>
               <directory>${install.prefix}/bin</directory>
               <filemode>750</filemode>
               <username>mapr</username>
@@ -154,6 +160,15 @@
                   <location>bin</location>
                 </source>
               </sources>
+            </mapping>
+            <mapping>
+            <directory>/usr/bin</directory>
+            <sources>
+              <softlinkSource>
+                <destination>sandboxcli.sh</destination>
+                <location>/opt/mapr/sandbox/bin/sandboxcli.sh</location>
+              </softlinkSource>
+            </sources>
             </mapping>
             <mapping>
               <directory>${install.prefix}/conf</directory>

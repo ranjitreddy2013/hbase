@@ -69,45 +69,59 @@ public class MergedResultScanner extends AbstractClientScanner implements Result
         Result result = null;
 
         try {
-        // TODO honour max results – put some counter
-        // TODO honour sort order
+            // TODO honour max results – put some counter
 
-        this.lastLast = this.last;
+            this.lastLast = this.last;
 
-        if (lastLast == null) {
-            return null;
-        }
-
-        last = nextElement(finalIt);
-
-        // they are the same row
-        boolean merged = false;
-        while (last != null && rowComparator.compare(lastLast.getRow(), last.getRow()) == 0) {
-            result = SandboxHTable.mergeResult(lastLast, last);
-            last = nextElement(finalIt);
-
-            if (!result.isEmpty()) {
-                merged = true;
-                break;
-            }
-
-            // if result is empty after merge
-            if (last == null) {
+            if (lastLast == null) {
                 return null;
             }
 
-            this.lastLast = this.last;
-            last = nextElement(finalIt);
-        }
+            while (true) {
+                last = nextElement(finalIt);
 
-        if (!merged) {
-            // makes sure it removes metadata cols as well
-            result = SandboxHTable.mergeResult(lastLast, new Result());
-        }
+                // second pass where last 2 are null => no more results to return
+                if (last == null && lastLast == null) {
+                    return null;
+                }
 
+                // they are the same row
+                boolean merged = false;
+                while (last != null && rowComparator.compare(lastLast.getRow(), last.getRow()) == 0) {
+                    result = SandboxHTable.mergeResult(lastLast, last);
+                    last = nextElement(finalIt);
+
+                    if (!result.isEmpty()) {
+                        merged = true;
+                        break;
+                    }
+
+                    // if result is empty after merge
+                    if (last == null) {
+                        return null;
+                    }
+
+                    this.lastLast = this.last;
+                    last = nextElement(finalIt);
+                }
+
+                if (!merged) {
+                    // makes sure it removes metadata cols as well
+                    result = SandboxHTable.mergeResult(lastLast, new Result());
+                }
+
+                // check if the result is valid (not empty)
+                if (!result.isEmpty()) {
+                    break;
+                } else {
+                    // iterate
+                    this.lastLast = last;
+                }
+            }
         } catch (Exception ex) {
-            LOG.error("SCAN",ex);
+            LOG.error("SCAN", ex);
         }
+
         return result;
     }
 

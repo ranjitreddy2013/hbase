@@ -1,14 +1,17 @@
 package com.mapr.db.sandbox;
 
 import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Iterator;
 
 import static com.mapr.db.sandbox.SandboxTestUtils.*;
-import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.*;
 
 public class SandboxTableScanIntegrationTest extends BaseSandboxIntegrationTest {
     Scan scanCF1 = new Scan();
@@ -104,6 +107,51 @@ public class SandboxTableScanIntegrationTest extends BaseSandboxIntegrationTest 
 
     // TODO repeat same thing for filled original table (inserts and deletes beginning, middle and end)
 
+    final byte[] nonExistingRowId = "norow".getBytes();
+
+    @Test
+    public void testScanAfterDeletionOfNonExistingRow() throws IOException, SandboxException {
+        loadData(hTableOriginal);
+        loadData(hTableMimic);
+
+
+
+        // scan all rows and count
+        ResultScanner origResults, sandResults, mimicResults;
+        origResults = hTableOriginal.getScanner(scan);
+        sandResults = hTableSandbox.getScanner(scan);
+        mimicResults = hTableMimic.getScanner(scan);
+        assertEquals("original table should have rows", 20L, countRows(origResults));
+        assertEquals("sandbox table should return rows", 20L, countRows(sandResults));
+        assertEquals("mimic table should have rows", 20L, countRows(mimicResults));
+
+        // count cells
+        origResults = hTableOriginal.getScanner(scan);
+        sandResults = hTableSandbox.getScanner(scan);
+        mimicResults = hTableMimic.getScanner(scan);
+        assertEquals("original table should have cells", 40L, countCells(origResults));
+        assertEquals("sandbox table should return cells", 40L, countCells(sandResults));
+        assertEquals("mimic table should have cells", 40L, countCells(mimicResults));
+
+        // delete some row columns from sandbox
+        delCell(hTableMimic, nonExistingRowId, CF1, COL1);
+        delCell(hTableSandbox, nonExistingRowId, CF1, COL1);
+
+        mimicResults = hTableMimic.getScanner(scan);
+        verifyScanIteratorAfterDeletionOfNonExistingRow(mimicResults.iterator());
+
+        sandResults = hTableSandbox.getScanner(scan);
+        verifyScanIteratorAfterDeletionOfNonExistingRow(sandResults.iterator());
+    }
+
+    private void verifyScanIteratorAfterDeletionOfNonExistingRow(Iterator<Result> iterator) {
+        while (iterator.hasNext()) {
+            Result row = iterator.next();
+
+            assertFalse("scans shouldn't contain empty rows", row.isEmpty());
+            assertNotNull("scans shouldn't contain rows without cells", row.listCells());
+        }
+    }
 
     @Test
     public void testScanForFilledOriginal() throws IOException, SandboxException {
@@ -127,7 +175,6 @@ public class SandboxTableScanIntegrationTest extends BaseSandboxIntegrationTest 
         assertEquals("original table should have cells", 40L, countCells(origResults));
         assertEquals("sandbox table should return cells", 40L, countCells(sandResults));
         assertEquals("mimic table should have cells", 40L, countCells(mimicResults));
-
 
         // insert on sandbox / mimic on multiple CFs
         setCellValue(hTableSandbox, newRowId, CF1, COL1, "v1");

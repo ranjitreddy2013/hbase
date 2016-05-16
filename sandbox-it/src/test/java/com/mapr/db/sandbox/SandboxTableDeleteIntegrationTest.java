@@ -51,9 +51,8 @@ public class SandboxTableDeleteIntegrationTest extends BaseSandboxIntegrationTes
         sandResults = hTableSandbox.getScanner(scan);
         mimicResults = hTableMimic.getScanner(scan);
         assertEquals("original table should have rows", 0L, countRows(origResults));
-        // TODO analyse if it should return empty results or not
-        assertEquals("sandbox table should return rows", 0L, countRows(sandResults));
         assertEquals("mimic table should have rows", 0L, countRows(mimicResults));
+        assertEquals("sandbox table should return rows", 0L, countRows(sandResults));
 
         // CASE: original empty, sandbox filled
         // load data into sandbox

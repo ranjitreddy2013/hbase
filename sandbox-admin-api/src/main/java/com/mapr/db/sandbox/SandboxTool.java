@@ -107,7 +107,6 @@ public class SandboxTool {
 
         cmdOperationOpts.put(OP_DELETE, deleteOpts);
         cmdOperationOpts.put(OP_DRILL, drillOpts);
-        cmdOperationOpts.put(OP_CLASSPATH, new Options());
     }
 
     public static void main(String[] args) throws IOException {
@@ -141,7 +140,7 @@ public class SandboxTool {
             	final String password = cmd.hasOption("p") ? cmd.getOptionValue("p") : promptPassword();
                 sandboxAdmin = new SandboxAdmin(new Configuration(), username, password);
             } else {
-            	sandboxAdmin = new SandboxAdmin(new Configuration());
+            	sandboxAdmin = new SandboxAdmin(new Configuration(), UserGroupInformation.getCurrentUser().getUserName());
             }
 
             if (operation.equals(OP_CREATE)) {

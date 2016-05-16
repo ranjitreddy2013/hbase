@@ -69,6 +69,10 @@ public class SandboxAdmin {
                 toolConfig.getString("sandbox.password", "mapr"));
     }
 
+    public SandboxAdmin(Configuration configuration, String username) throws SandboxException {
+        this(configuration, username, null);
+    }
+
     public SandboxAdmin(Configuration configuration, String username, String password) throws SandboxException {
         this.username = username;
         this.password = password; // be careful what you keep in memory
@@ -79,11 +83,14 @@ public class SandboxAdmin {
             e.printStackTrace();
         }
 
-        globalSandboxListManager = SandboxTablesListManager.global(fs);
-        this.restClient = new MapRRestClient(toolConfig.getStringArray("sandbox.rest_urls"), username, password);
+        globalSandboxListManager = SandboxTablesListManager.global(fs, username);
 
-        if (restClient != null) {
-            restClient.testCredentials();
+        if (password != null) {
+            this.restClient = new MapRRestClient(toolConfig.getStringArray("sandbox.rest_urls"), username, password);
+
+            if (restClient != null) {
+                restClient.testCredentials();
+            }
         }
     }
 
@@ -99,7 +106,7 @@ public class SandboxAdmin {
 
         // update lists
         SandboxTablesListManager origTableSandboxListManager = SandboxTablesListManager
-                .forOriginalTable(fs, new Path(originalTablePath), originalFid);
+                .forOriginalTable(fs, new Path(originalTablePath), originalFid, username);
         globalSandboxListManager.moveToTop(sandboxTablePath);
         origTableSandboxListManager.moveToTop(sandboxTablePath);
     }
@@ -281,7 +288,7 @@ public class SandboxAdmin {
         Path originalPath = SandboxTableUtils.pathFromFid(fs, originalFid);
 
         SandboxTablesListManager origTableSandboxListManager = SandboxTablesListManager
-                .forOriginalTable(fs, originalPath, originalFid);
+                .forOriginalTable(fs, originalPath, originalFid, username);
         globalSandboxListManager.delete(sandboxTablePath);
         origTableSandboxListManager.delete(sandboxTablePath);
     }
@@ -341,7 +348,7 @@ public class SandboxAdmin {
 
         String originalFid = SandboxTableUtils.getFidFromPath(fs, originalTablePath);
         SandboxTablesListManager originalSandboxListManager = SandboxTablesListManager
-                .forOriginalTable(fs, new Path(originalTablePath), originalFid);
+                .forOriginalTable(fs, new Path(originalTablePath), originalFid, username);
 
         return originalSandboxListManager.getListFromFile();
     }

@@ -36,9 +36,6 @@ public class SandboxTestUtils {
     public static long countRows(ResultScanner scanner) throws IOException {
         long result = 0L;
         for (Result r : scanner) {
-            if (r.isEmpty()) {
-                continue;
-            }
             ++result;
         }
         return result;
@@ -47,13 +44,7 @@ public class SandboxTestUtils {
     public static long countCells(ResultScanner scanner) throws IOException {
         long result = 0L;
         for (Result r : scanner) {
-            if (r.isEmpty()) {
-                continue;
-            }
-
-            for (Cell cell : r.rawCells()) {
-                ++result;
-            }
+            result += r.rawCells().length;
         }
         return result;
     }

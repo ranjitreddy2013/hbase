@@ -41,16 +41,21 @@ public class DrillViewConverter {
         try {
             st = connection.createStatement();
             ResultSet rs = st.executeQuery(RETRIEVE_VIEWS_SQL_STMT);
+            int viewCount = 0;
+            int matchingViewCount = 0;
             while(rs.next()){
+                ++viewCount;
                 final String viewDefinition = rs.getString(3);
 
                 if (viewDefinition.contains(originalTablePath)) {
+                    ++matchingViewCount;
                     final String viewSchema = rs.getString(1);
                     final String adaptedViewDef = adaptViewDefinition(viewDefinition);
                     final String adaptedViewName = adaptViewName(rs.getString(2));
                     attemptCreateAdaptedView(connection.createStatement(), viewSchema, adaptedViewName, adaptedViewDef);
                 }
             }
+            LOG.info(String.format("Analysed %d existing views. %d adapted.", viewCount, matchingViewCount));
         } catch (SQLException e) {
             throw new SandboxException("Error executing SQL in Drill", e);
         } finally {
