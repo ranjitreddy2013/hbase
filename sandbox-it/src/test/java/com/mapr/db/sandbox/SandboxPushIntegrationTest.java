@@ -35,13 +35,13 @@ public class SandboxPushIntegrationTest extends BaseSandboxIntegrationTest {
 
         // Insert some data to original table
         Put put = new Put(Bytes.toBytes("r1"));
-        put.add(FAMILY_BYTES, Bytes.toBytes("name"), Bytes.toBytes("kanna"));
+        put.add(CF1, Bytes.toBytes("name"), Bytes.toBytes("kanna"));
         hTableOriginal.put(put);
         hTableOriginal.flushCommits();
 
         // Insert some data to sandbox table
         Put put1 = new Put(Bytes.toBytes("r2"));
-        put1.add(FAMILY_BYTES, Bytes.toBytes("name"), Bytes.toBytes("alex"));
+        put1.add(CF1, Bytes.toBytes("name"), Bytes.toBytes("alex"));
         hTableSandbox.put(put1);
         hTableSandbox.flushCommits();
 

@@ -92,7 +92,7 @@ public class SandboxTableIncrementColumnValueIntegrationTest extends BaseSandbox
     hTableSandbox.append(append1);
     Get get1 = new Get(Bytes.toBytes("row900"));
     get1.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col1"));
-    String prod = Bytes.toString(hTableProduction.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
+    String prod = Bytes.toString(hTableOriginal.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
     String sand = Bytes.toString(hTableSandbox.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
     assertEquals("value not in production. should return null.", prod, null);
     assertEquals("value should be appended as is in sandbox", sand, "v900");
@@ -103,7 +103,7 @@ public class SandboxTableIncrementColumnValueIntegrationTest extends BaseSandbox
     hTableSandbox.append(append2);
     Get get2 = new Get(Bytes.toBytes("row900"));
     get2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col900"));
-    prod = Bytes.toString(hTableProduction.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col900")));
+    prod = Bytes.toString(hTableOriginal.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col900")));
     sand = Bytes.toString(hTableSandbox.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col900")));
     assertEquals("value not in production. should return null.", prod, null);
     assertEquals("new column. value should be appended as is in sandbox", sand, "v900");
@@ -116,7 +116,7 @@ public class SandboxTableIncrementColumnValueIntegrationTest extends BaseSandbox
     //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
     //assertEquals("value should be null for production", sand, null);
     //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-    //assertFalse("deletionMark should be removed if present", hTableProduction.exists(get));
+    //assertFalse("deletionMark should be removed if present", hTableOriginal.exists(get));
   }
 
   @Test
@@ -128,7 +128,7 @@ public class SandboxTableIncrementColumnValueIntegrationTest extends BaseSandbox
     hTableSandbox.append(append1);
     Get get1 = new Get(Bytes.toBytes("row25"));
     get1.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col1"));
-    String prod = Bytes.toString(hTableProduction.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
+    String prod = Bytes.toString(hTableOriginal.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
     String sand = Bytes.toString(hTableSandbox.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
     assertEquals("value not in production. should return null.", prod, null);
     assertEquals("value should be appended to the existing value in sandbox", sand, "25v125");
@@ -139,7 +139,7 @@ public class SandboxTableIncrementColumnValueIntegrationTest extends BaseSandbox
     hTableSandbox.append(append2);
     Get get2 = new Get(Bytes.toBytes("row25"));
     get2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col125"));
-    prod = Bytes.toString(hTableProduction.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col125")));
+    prod = Bytes.toString(hTableOriginal.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col125")));
     sand = Bytes.toString(hTableSandbox.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col125")));
     assertEquals("value not in production. should return null.", prod, null);
     assertEquals("new column. value should be appended as is in sandbox", sand, "v125");
@@ -152,7 +152,7 @@ public class SandboxTableIncrementColumnValueIntegrationTest extends BaseSandbox
     //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
     //assertEquals("value should be null for production", sand, null);
     //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-    //assertFalse("deletionMark should be removed if present", hTableProduction.exists(get));
+    //assertFalse("deletionMark should be removed if present", hTableOriginal.exists(get));
   }
 
   @Test
@@ -164,7 +164,7 @@ public class SandboxTableIncrementColumnValueIntegrationTest extends BaseSandbox
     hTableSandbox.append(append1);
     Get get1 = new Get(Bytes.toBytes("row35"));
     get1.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col1"));
-    String prod = Bytes.toString(hTableProduction.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
+    String prod = Bytes.toString(hTableOriginal.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
     String sand = Bytes.toString(hTableSandbox.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
     assertEquals("value should not be appended in production", prod, "35");
     assertEquals("value should be fetched from production and appended in sandbox", sand, "35v135");
@@ -175,7 +175,7 @@ public class SandboxTableIncrementColumnValueIntegrationTest extends BaseSandbox
     hTableSandbox.append(append2);
     Get get2 = new Get(Bytes.toBytes("row35"));
     get2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col135"));
-    prod = Bytes.toString(hTableProduction.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col135")));
+    prod = Bytes.toString(hTableOriginal.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col135")));
     sand = Bytes.toString(hTableSandbox.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col135")));
     assertEquals("value not in production. should return null.", prod, null);
     assertEquals("new column. value should be appended as is in sandbox", sand, "v135");
@@ -188,7 +188,7 @@ public class SandboxTableIncrementColumnValueIntegrationTest extends BaseSandbox
     //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
     //assertEquals("value should be null for production", sand, null);
     //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-    //assertFalse("deletionMark should be removed if present", hTableProduction.exists(get));
+    //assertFalse("deletionMark should be removed if present", hTableOriginal.exists(get));
   } */
 
   @Test
@@ -211,7 +211,7 @@ public class SandboxTableIncrementColumnValueIntegrationTest extends BaseSandbox
 /*
     Get get1 = new Get(Bytes.toBytes("row1"));
     get1.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col1"));
-    String prod = Bytes.toString(hTableProduction.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
+    String prod = Bytes.toString(hTableOriginal.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
     String sand = Bytes.toString(hTableSandbox.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
     assertEquals("value in production should not be affected by any of the sandbox increments", prod, 1L);
     assertEquals("value in sandbox after all increment operations", sand, 3L);
@@ -235,7 +235,7 @@ public class SandboxTableIncrementColumnValueIntegrationTest extends BaseSandbox
 /*
     Get get2 = new Get(Bytes.toBytes("row1"));
     get2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col101"));
-    String prod = Bytes.toString(hTableProduction.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col101")));
+    String prod = Bytes.toString(hTableOriginal.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col101")));
     String sand = Bytes.toString(hTableSandbox.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col101")));
     assertEquals("value not in production. should return null.", prod, null);
     assertEquals("value in sandbox after all increment operations", sand, 3L);
@@ -248,7 +248,7 @@ public class SandboxTableIncrementColumnValueIntegrationTest extends BaseSandbox
     //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
     //assertEquals("value should be null for production", sand, null);
     //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-    //assertFalse("deletionMark should be removed if present", hTableProduction.exists(get)); */
+    //assertFalse("deletionMark should be removed if present", hTableOriginal.exists(get)); */
   }
 
 }

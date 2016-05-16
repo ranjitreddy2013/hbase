@@ -17,9 +17,9 @@ public class SandboxTableGetRowOrBeforeIntegrationTest extends BaseSandboxIntegr
         Result result;
         // test empty table case
         String testRow = "rowId0";
-        result = originalHTable.getRowOrBefore(testRow.getBytes(), FAMILY_BYTES);
+        result = originalHTable.getRowOrBefore(testRow.getBytes(), CF1);
         assertTrue("original should not return any row", result.isEmpty());
-        result = hTable.getRowOrBefore(testRow.getBytes(), FAMILY_BYTES);
+        result = hTable.getRowOrBefore(testRow.getBytes(), CF1);
         assertTrue("sandbox should not return any row", result.isEmpty());
     }
 }

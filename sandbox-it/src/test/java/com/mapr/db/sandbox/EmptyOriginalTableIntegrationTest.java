@@ -3,6 +3,7 @@ package com.mapr.db.sandbox;
 import com.google.common.collect.Lists;
 import org.apache.hadoop.hbase.CellUtil;
 import org.apache.hadoop.hbase.client.*;
+import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -24,8 +25,7 @@ public class EmptyOriginalTableIntegrationTest extends
 
 		for (int i = 0; i < 25; i++) {
 			Put put = new Put(new String("rowId" + i).getBytes());
-			put.add(FAMILY_BYTES, "col".getBytes(), Integer.toString(i)
-					.getBytes());
+			put.add(CF1, "col".getBytes(), Integer.toString(i).getBytes());
 			hTable.put(put);
 		}
 		hTable.flushCommits();
@@ -55,14 +55,12 @@ public class EmptyOriginalTableIntegrationTest extends
 
 		// add the rows
 		Put put1 = new Put(testRow1.getBytes());
-		put1.add(FAMILY_BYTES, "col".getBytes(), Integer.toString(1).getBytes());
+		put1.add(CF1, "col".getBytes(), Integer.toString(1).getBytes());
 		hTable.put(put1);
 
 		Put put2 = new Put(testRow2.getBytes());
-		put2.add(FAMILY_BYTES, "col1".getBytes(), Integer.toString(1)
-				.getBytes());
-		put2.add(FAMILY_BYTES, "col2".getBytes(), Integer.toString(1)
-				.getBytes());
+		put2.add(CF1, "col1".getBytes(), Integer.toString(1).getBytes());
+		put2.add(CF1, "col2".getBytes(), Integer.toString(1).getBytes());
 		hTable.put(put2);
 		hTable.flushCommits();
 
@@ -90,7 +88,7 @@ public class EmptyOriginalTableIntegrationTest extends
 
 		// delete a col from 2nd row and check existance
 		Delete delete = new Delete(testRow1.getBytes());
-		delete.deleteColumn(FAMILY_BYTES, "col2".getBytes());
+		delete.deleteColumn(CF1, "col2".getBytes());
 		hTable.delete(delete);
 		hTable.flushCommits();
 
@@ -132,14 +130,12 @@ public class EmptyOriginalTableIntegrationTest extends
 
 		// add the rows
 		Put put1 = new Put(testRow1.getBytes());
-		put1.add(FAMILY_BYTES, "col".getBytes(), Integer.toString(1).getBytes());
+		put1.add(CF1, "col".getBytes(), Integer.toString(1).getBytes());
 		hTable.put(put1);
 
 		Put put2 = new Put(testRow2.getBytes());
-		put2.add(FAMILY_BYTES, "col1".getBytes(), Integer.toString(1)
-				.getBytes());
-		put2.add(FAMILY_BYTES, "col2".getBytes(), Integer.toString(1)
-				.getBytes());
+		put2.add(CF1, "col1".getBytes(), Integer.toString(1).getBytes());
+		put2.add(CF1, "col2".getBytes(), Integer.toString(1).getBytes());
 		hTable.put(put2);
 		hTable.flushCommits();
 
@@ -180,7 +176,7 @@ public class EmptyOriginalTableIntegrationTest extends
 
 		// delete a col from 2nd row and check existance
 		Delete delete = new Delete(testRow1.getBytes());
-		delete.deleteColumn(FAMILY_BYTES, "col2".getBytes());
+		delete.deleteColumn(CF1, "col2".getBytes());
 		hTable.delete(delete);
 		hTable.flushCommits();
 
@@ -218,10 +214,8 @@ public class EmptyOriginalTableIntegrationTest extends
 		// insert some data into sandbox
 		for (int i = 0; i < 25; i++) {
 			Put put = new Put(new String("rowId" + i).getBytes());
-			put.add(FAMILY_BYTES, "col1".getBytes(), Integer.toString(i)
-					.getBytes());
-			put.add(FAMILY_BYTES, "col2".getBytes(), Integer.toString(i * 5)
-					.getBytes());
+			put.add(CF1, "col1".getBytes(), Integer.toString(i).getBytes());
+			put.add(CF1, "col2".getBytes(), Integer.toString(i * 5).getBytes());
 			hTable.put(put);
 		}
 		hTable.flushCommits();
@@ -240,7 +234,7 @@ public class EmptyOriginalTableIntegrationTest extends
 		List<Delete> deletes = Lists.newArrayList();
 		for (int i = 0; i < 5; i++) {
 			Delete delete = new Delete(new String("rowId" + i).getBytes());
-			delete.deleteColumns(FAMILY_BYTES, "col2".getBytes());
+			delete.deleteColumns(CF1, "col2".getBytes());
 			deletes.add(delete);
 		}
 		hTable.delete(deletes);
@@ -274,10 +268,8 @@ public class EmptyOriginalTableIntegrationTest extends
 		// insert some data into sandbox
 		for (int i = 0; i < 25; i++) {
 			Put put = new Put(new String("rowId" + i).getBytes());
-			put.add(FAMILY_BYTES, "col1".getBytes(), Integer.toString(i)
-					.getBytes());
-			put.add(FAMILY_BYTES, "col2".getBytes(), Integer.toString(i * 5)
-					.getBytes());
+			put.add(CF1, "col1".getBytes(), Integer.toString(i).getBytes());
+			put.add(CF1, "col2".getBytes(), Integer.toString(i * 5).getBytes());
 			hTable.put(put);
 		}
 		hTable.flushCommits();
@@ -311,7 +303,7 @@ public class EmptyOriginalTableIntegrationTest extends
 		// update columns
 		for (int i = 5; i < 10; i++) {
 			Put put = new Put(new String("rowId" + i).getBytes());
-			put.add(FAMILY_BYTES, "col3".getBytes(), "other value".getBytes());
+			put.add(CF1, "col3".getBytes(), "other value".getBytes());
 			hTable.put(put);
 		}
 		hTable.flushCommits();
@@ -325,21 +317,6 @@ public class EmptyOriginalTableIntegrationTest extends
 		scanner = hTable.getScanner(new Scan());
 		assertEquals("sandbox should contain all inserted rows", 20L,
 				countRows(scanner));
-	}
-
-	@Test(expected = UnsupportedOperationException.class)
-	public void testGetRowOrBefore() throws IOException {
-		HTable hTable = new HTable(conf, sandboxTablePath);
-		HTable originalHTable = new HTable(conf, originalTablePath);
-
-		Result result;
-		// test empty table case
-		String testRow = "rowId0";
-		result = originalHTable
-				.getRowOrBefore(testRow.getBytes(), FAMILY_BYTES);
-		assertTrue("original should not return any row", result.isEmpty());
-		result = hTable.getRowOrBefore(testRow.getBytes(), FAMILY_BYTES);
-		assertTrue("sandbox should not return any row", result.isEmpty());
 	}
 
 	@Test
@@ -361,17 +338,17 @@ public class EmptyOriginalTableIntegrationTest extends
 
 		// load sandbox table with a row
 		Put put = new Put(testRow.getBytes());
-		put.add(FAMILY_BYTES, "col1".getBytes(), "1".getBytes());
-		put.add(FAMILY_BYTES, "col2".getBytes(), "2".getBytes());
+		put.add(CF1, "col1".getBytes(), "1".getBytes());
+		put.add(CF1, "col2".getBytes(), "2".getBytes());
 		hTable.put(put);
 		hTable.flushCommits();
 
 		// perform mutation
 		put = new Put(testRow.getBytes());
-		put.add(FAMILY_BYTES, "col2".getBytes(), "20".getBytes());
+		put.add(CF1, "col2".getBytes(), "20".getBytes());
 
 		Delete delete = new Delete(testRow.getBytes());
-		delete.deleteColumn(FAMILY_BYTES, "col1".getBytes());
+		delete.deleteColumn(CF1, "col1".getBytes());
 
 		RowMutations rm = new RowMutations(testRow.getBytes());
 		rm.add(put);
@@ -385,15 +362,12 @@ public class EmptyOriginalTableIntegrationTest extends
 		result = hTable.get(get);
 
 		assertFalse("sandbox should return the mutations", result.isEmpty());
-		assertTrue("should contain the changed column",
-				result.containsColumn(FAMILY_BYTES, "col2".getBytes()));
-		assertFalse("shouldn't contain the deleted column",
-				result.containsColumn(FAMILY_BYTES, "col1".getBytes()));
+		assertTrue("should contain the changed column", result.containsColumn(CF1, "col2".getBytes()));
+		assertFalse("shouldn't contain the deleted column", result.containsColumn(CF1, "col1".getBytes()));
+
 		assertTrue(
 				"should contain the updated value",
-				CellUtil.matchingValue(
-						result.getColumnLatestCell(FAMILY_BYTES,
-								"col2".getBytes()), "20".getBytes()));
+				CellUtil.matchingValue(result.getColumnLatestCell(CF1, "col2".getBytes()),"20".getBytes()));
 
 	}
 
@@ -416,14 +390,14 @@ public class EmptyOriginalTableIntegrationTest extends
 
 		// load sandbox table with a row
 		Put put = new Put(testRow.getBytes());
-		put.add(FAMILY_BYTES, "col".getBytes(), "1".getBytes());
+		put.add(CF1, "col".getBytes(), "1".getBytes());
 		hTable.put(put);
 		hTable.flushCommits();
 
 		// perform mutation
 		Append append = new Append(testRow.getBytes());
-		append.add(FAMILY_BYTES, "col".getBytes(), "20".getBytes());
-		append.add(FAMILY_BYTES, "col2".getBytes(), "456".getBytes());
+		append.add(CF1, "col".getBytes(), "20".getBytes());
+		append.add(CF1, "col2".getBytes(), "456".getBytes());
 		hTable.append(append);
 
 		// verify things got changed
@@ -435,9 +409,53 @@ public class EmptyOriginalTableIntegrationTest extends
 		assertFalse("sandbox should return the mutations", result.isEmpty());
 		assertTrue(
 				"should contain the updated value",
-				CellUtil.matchingValue(
-						result.getColumnLatestCell(FAMILY_BYTES,
-								"col".getBytes()), "120".getBytes()));
+				CellUtil.matchingValue(result.getColumnLatestCell(CF1, "col".getBytes()), "120".getBytes()));
 	}
+	
+    @Test
+    public void testIncrement() throws IOException {
+        HTable hTable = new HTable(conf, sandboxTablePath);
+        HTable originalHTable = new HTable(conf, originalTablePath);
+
+        final String testRow = "rowId1";
+
+        Result result;
+
+        // check there's nothing in the sandbox before the test
+        Get get = new Get(testRow.getBytes());
+
+        result = originalHTable.get(get);
+        assertTrue("original should not return any row", result.isEmpty());
+        result = hTable.get(get);
+        assertTrue("sandbox should not return any row", result.isEmpty());
+
+        // load sandbox table with a row
+        Put put = new Put(testRow.getBytes());
+        put.add(CF1, "col".getBytes(), Bytes.toBytes(2L));
+        originalHTable.put(put);
+        originalHTable.flushCommits();
+
+        // perform mutation
+        Increment increment = new Increment(testRow.getBytes());
+        increment.addColumn(CF1, "col".getBytes(), 20L);
+        increment.addColumn(CF1, "col2".getBytes(), 4L);
+        hTable.increment(increment);
+
+        // verify things got changed
+        result = originalHTable.get(get);
+        assertFalse("original should not return any row", result.isEmpty());
+        result = hTable.get(get);
+        assertTrue("sandbox should not return any row", result.isEmpty()); // TODO change
+
+        assertFalse("sandbox should return the mutations", result.isEmpty());
+        assertTrue("should contain the updated value",
+                CellUtil.matchingValue(result.getColumnLatestCell(CF1, "col".getBytes()),
+                        Bytes.toBytes(22L)));
+
+        assertTrue("should contain the updated value",
+                CellUtil.matchingValue(result.getColumnLatestCell(CF1, "col2".getBytes()),
+                        Bytes.toBytes(4L)));
+    }
+
 
 }

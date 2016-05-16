@@ -6,22 +6,14 @@ import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.*;
-import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.util.Bytes;
-
-import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import static org.junit.Assert.*;
-
-import static com.mapr.db.sandbox.SandboxTestUtils.countCells;
-import static com.mapr.db.sandbox.SandboxTestUtils.countRows;
-import static com.mapr.db.sandbox.SandboxTable.DEFAULT_META_CF_NAME;
-import static com.mapr.db.sandbox.SandboxTable.DEFAULT_META_CF;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.ArrayList;
+
+import static com.mapr.db.sandbox.SandboxTable.DEFAULT_META_CF;
+import static org.junit.Assert.assertEquals;
 
 public class SandboxTableMutateRowIntegrationTest extends BaseSandboxIntegrationTest {
   protected static Configuration conf = HBaseConfiguration.create();
@@ -164,7 +156,7 @@ public class SandboxTableMutateRowIntegrationTest extends BaseSandboxIntegration
     //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
     //assertEquals("value should be null for production", sand, null);
     //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-    //assertFalse("deletionMark should be removed if present", hTableProduction.exists(get));
+    //assertFalse("deletionMark should be removed if present", hTableOriginal.exists(get));
 }
 
   @Test
@@ -241,7 +233,7 @@ public class SandboxTableMutateRowIntegrationTest extends BaseSandboxIntegration
     //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
     //assertEquals("value should be null for production", sand, null);
     //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-    //assertFalse("deletionMark should be removed if present", hTableProduction.exists(get));
+    //assertFalse("deletionMark should be removed if present", hTableOriginal.exists(get));
   }
 
   @Test
@@ -318,7 +310,7 @@ public class SandboxTableMutateRowIntegrationTest extends BaseSandboxIntegration
     //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
     //assertEquals("value should be null for production", sand, null);
     //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-    //assertFalse("deletionMark should be removed if present", hTableProduction.exists(get));
+    //assertFalse("deletionMark should be removed if present", hTableOriginal.exists(get));
   }
 
   @Test
@@ -395,7 +387,7 @@ public class SandboxTableMutateRowIntegrationTest extends BaseSandboxIntegration
     //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
     //assertEquals("value should be null for production", sand, null);
     //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-    //assertFalse("deletionMark should be removed if present", hTableProduction.exists(get));
+    //assertFalse("deletionMark should be removed if present", hTableOriginal.exists(get));
   }
 
 }
