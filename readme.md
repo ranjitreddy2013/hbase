@@ -65,3 +65,19 @@ Add the following dependency to your project's pom.xml
   <version>${mapr.hbase.version}</version>
 </dependency>
 ```
+
+Sandbox Functionalities
+-----------------
+Sandbox features consists in a zero-copy version of a MapR-DB table. It works by changing the HBase client to act as a mediator of requests between two tables: the original one and the sandbox table, containing the changes. The client is responsible for merging the changes and make sure the sandbox is exposed as a normal table although it just contains the differences (not incurring in significant space overhead).
+
+MapR Internal documentation available here: https://drive.google.com/drive/folders/0B2uue98hfhIQem9VWUJlUTc0dk0 
+
+Latest version documentation folder: https://drive.google.com/drive/folders/0B2uue98hfhIQUDF3U2s2aEZhOWM 
+
+
+To build the source code:
+`mvn clean install -P philips-sandbox`   Maven profile.
+
+
+
+
