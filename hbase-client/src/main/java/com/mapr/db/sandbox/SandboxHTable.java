@@ -3,7 +3,6 @@ package com.mapr.db.sandbox;
 import com.google.common.base.Function;
 import com.google.common.collect.FluentIterable;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -21,7 +20,8 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import static com.mapr.db.sandbox.SandboxTable.DEFAULT_META_CF;
-import static com.mapr.db.sandbox.SandboxTableUtils.*;
+import static com.mapr.db.sandbox.SandboxTableUtils.buildAnnotatedColumn;
+import static com.mapr.db.sandbox.SandboxTableUtils.restrictColumnsForDeletion;
 
 public class SandboxHTable {
     private static final Log LOG = LogFactory.getLog(SandboxHTable.class);

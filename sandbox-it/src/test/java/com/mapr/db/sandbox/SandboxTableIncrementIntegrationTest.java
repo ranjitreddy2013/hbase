@@ -294,27 +294,28 @@ public class SandboxTableIncrementIntegrationTest extends BaseSandboxIntegration
 
     @Test
     public void testConcurrentIncrement() throws IOException {
-        testConcurrentIncrementForTable(hTableMimic);
-        testConcurrentIncrementForTable(hTableSandbox);
+        testConcurrentIncrementForTable(hTableMimic, 0L);
+        testConcurrentIncrementForTable(hTableSandbox, 0L);
     }
 
     @Test
     public void testConcurrentIncrementOnFilledOriginal() throws IOException {
         // fill original
+        long initialValue = 4L;
         Put put = new Put(newRowId);
-        put.add(CF1, colA, Bytes.toBytes(0L));
-        put.add(CF1, colB, Bytes.toBytes(0L));
+        put.add(CF1, colA, Bytes.toBytes(initialValue));
+        put.add(CF1, colB, Bytes.toBytes(initialValue));
 
         hTableMimic.put(put);
         hTableMimic.flushCommits();
         hTableOriginal.put(put);
         hTableOriginal.flushCommits();
 
-        testConcurrentIncrementForTable(hTableMimic);
-        testConcurrentIncrementForTable(hTableSandbox);
+        testConcurrentIncrementForTable(hTableMimic, initialValue);
+        testConcurrentIncrementForTable(hTableSandbox, initialValue);
     }
 
-    private void testConcurrentIncrementForTable(HTable hTable) throws IOException {
+    private void testConcurrentIncrementForTable(HTable hTable, long initialValue) throws IOException {
         final int SIMULATENOUS_TASKS = 6;
 
         // invoke simultaneous push
@@ -337,8 +338,8 @@ public class SandboxTableIncrementIntegrationTest extends BaseSandboxIntegration
         }
 
 
-        assertEquals(incrementColA.get(), getCellLongValue(hTable, newRowId, CF1, colA));
-        assertEquals(incrementColB.get(), getCellLongValue(hTable, newRowId, CF1, colB));
+        assertEquals(incrementColA.get()+initialValue, getCellLongValue(hTable, newRowId, CF1, colA));
+        assertEquals(incrementColB.get()+initialValue, getCellLongValue(hTable, newRowId, CF1, colB));
         assertEquals(0, errorCount.get());
     }
 
@@ -370,5 +371,4 @@ public class SandboxTableIncrementIntegrationTest extends BaseSandboxIntegration
             }
         };
     }
-
 }

@@ -14,10 +14,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.EnumMap;
-import java.util.List;
+import java.util.*;
 
 import static com.mapr.db.sandbox.SandboxTable.DEFAULT_META_CF;
 import static com.mapr.db.sandbox.SandboxTable.METADATA_FILENAME_FORMAT;
@@ -212,5 +209,30 @@ public class SandboxTableUtils {
 
     public static byte[] generateTransactionId(Mutation mutation) {
         return hashF.hashString(mutation.toString()).asBytes();
+    }
+
+    public static Get enrichGet(Get get) {
+        // add only if there is a specific set of columns, otherwise it will retrieve all
+        if (get.hasFamilies()) {
+            Get result = new Get(get.getRow());
+            result.addFamily(DEFAULT_META_CF);
+
+            final Map<byte[], NavigableSet<byte[]>> familyMap = get.getFamilyMap();
+            for (byte[] family : familyMap.keySet()) {
+                NavigableSet<byte[]> qualifiers = familyMap.get(family);
+
+                if (qualifiers != null) {
+                    for (byte[] qualifier : qualifiers) {
+                        result.addColumn(family, qualifier);
+                    }
+                } else {
+                    result.addFamily(family);
+                }
+            }
+
+            return result;
+        }
+
+        return get;
     }
 }
