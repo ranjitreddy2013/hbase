@@ -16,13 +16,13 @@ public class SandboxTableUtilsTest {
     AbstractHTable shadowTableTable;
     AbstractHTable originalTable;
     SandboxTable sandboxTable;
-    String proxyFid = "someFid";
+    SandboxTable.SandboxState state = mock(SandboxTable.SandboxState.class);
 
     @Before
     public void setup() {
         shadowTableTable = mock(AbstractHTable.class);
         originalTable = mock(AbstractHTable.class);
-        sandboxTable = new SandboxTable(shadowTableTable, originalTable, proxyFid);
+        sandboxTable = new SandboxTable(shadowTableTable, originalTable, state);
     }
 
 //    @Test
@@ -57,7 +57,7 @@ public class SandboxTableUtilsTest {
     public void testEnrichedGet() throws Exception {
         AbstractHTable shadowTableTable = mock(AbstractHTable.class);
         AbstractHTable originalTable = mock(AbstractHTable.class);
-        SandboxTable sandboxTable = new SandboxTable(shadowTableTable, originalTable, proxyFid);
+        SandboxTable sandboxTable = new SandboxTable(shadowTableTable, originalTable, state);
 
         Get get = mock(Get.class);
         when(get.hasFamilies()).thenReturn(false);

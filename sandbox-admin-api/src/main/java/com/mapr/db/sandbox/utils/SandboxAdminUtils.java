@@ -174,6 +174,23 @@ public class SandboxAdminUtils {
         }
     }
 
+    public static void pauseReplication(CLICommandFactory cmdFactory, String fromTablePath, String toTablePath) {
+        ProcessedInput input = new ProcessedInput(new String[] {
+                "table", "replica", "pause",
+                "-path", fromTablePath,
+                "-replica", toTablePath
+        });
+
+        CommandOutput commandOutput = null;
+        try {
+            DbReplicaCommands cmd = (DbReplicaCommands) cmdFactory.getCLI(input);
+            commandOutput = cmd.executeRealCommand();
+        } catch (Exception e) {
+            SandboxAdminUtils.printErrors(commandOutput);
+            e.printStackTrace(); // TODO handle properly
+        }
+    }
+
     public static void deleteCF(CLICommandFactory cmdFactory, String tablePath, String cfName) {
         ProcessedInput input = new ProcessedInput(new String[] {
                 "table", "cf", "delete",

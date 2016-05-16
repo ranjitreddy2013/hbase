@@ -236,9 +236,9 @@ public class HTable implements HTableInterface {
 
         AbstractHTable originalTable = initIfMapRTable(conf,
                 TableName.valueOf(originalTablePath));
-        String proxyFid = info.get(SandboxTable.InfoType.PROXY_FID);
+        SandboxTable.SandboxState state = SandboxTable.SandboxState.fromString(info.get(SandboxTable.InfoType.SANDBOX_STATE));
 
-        this.sandboxTable = new SandboxTable(table, originalTable, proxyFid);
+        this.sandboxTable = new SandboxTable(table, originalTable, state);
       }
     } catch (Exception ex) {
       LOG.error("Error creating original table representation", ex);

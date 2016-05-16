@@ -20,6 +20,7 @@ import java.util.*;
 
 import static com.mapr.db.sandbox.SandboxTable.DEFAULT_META_CF;
 import static com.mapr.db.sandbox.SandboxTableUtils.buildAnnotatedColumn;
+import static com.mapr.db.sandbox.SandboxTableUtils.restrictColumnsForDeletion;
 
 public class SandboxHTable {
     private static final Log LOG = LogFactory.getLog(SandboxHTable.class);
@@ -182,18 +183,20 @@ public class SandboxHTable {
     }
 
     public static void delete(final SandboxTable sandboxTable, final List<Delete> deletes) throws IOException {
-        List<Put> puts = FluentIterable.from(deletes).transform(new Function<Delete, Put>() {
-            @Nullable
-            @Override
-            public Put apply(@Nullable Delete delete) {
-                try {
-                    return SandboxTableUtils.markForDeletionPut(sandboxTable, delete);
-                } catch (IOException e) {
-                    LOG.error(e.getMessage());
-                    return null;
-                }
-            }
-        }).toImmutableList();
+        List<Put> puts = Lists.newArrayList();
+//        FluentIterable.from(deletes).transform(new Function<Delete, Put>() {
+//            @Nullable
+//            @Override
+//            public Put apply(@Nullable Delete delete) {
+//                try {
+//                    return SandboxTableUtils.markForDeletionPut(sandboxTable, delete);
+//                } catch (IOException e) {
+//                    LOG.error(e.getMessage());
+//                    return null;
+//                }
+//            }
+//        }).toImmutableList();
+        // TODO this is broken
 
         sandboxTable.table.delete(deletes);
         sandboxTable.table.put(puts);
@@ -201,14 +204,24 @@ public class SandboxHTable {
     }
 
     public static void delete(SandboxTable sandboxTable, Delete delete) throws IOException {
-        sandboxTable.table.delete(delete);
-        markAsDeleted(sandboxTable, delete);
-    }
+        final byte[] rowId = delete.getRow();
+        // go through the existing column families, etc
+        CellSet cellsToDelete = SandboxTableUtils.getCellsToDelete(sandboxTable, delete);
+        Put put = SandboxTableUtils.markForDeletionPut(rowId, cellsToDelete);
 
-    private static void markAsDeleted(SandboxTable sandboxTable, Delete delete) throws IOException {
-        Put markDeletionPut = SandboxTableUtils.markForDeletionPut(sandboxTable, delete);
-        sandboxTable.table.put(markDeletionPut);
-        sandboxTable.table.flushCommits();
+        RowMutations rm = new RowMutations(rowId);
+        rm.add(restrictColumnsForDeletion(delete, cellsToDelete));
+        rm.add(put);
+
+        try {
+            // TODO retry?
+            boolean result = sandboxTable.table
+                    .checkAndMutate(rowId,  SandboxTable.DEFAULT_DIRTY_CF, SandboxTable.DEFAULT_TID_COL,
+                            CompareFilter.CompareOp.EQUAL, null, rm);
+            System.out.println();
+        } catch (IOException e) {
+            throw new InterruptedIOException(e.toString());
+        }
     }
 
     /**
@@ -219,12 +232,18 @@ public class SandboxHTable {
      * @param put
      */
     public static void put(SandboxTable sandboxTable, Put put) throws InterruptedIOException {
+        final byte[] rowId = put.getRow();
         Delete delete = removeDeletionMarkForPut(put);
 
-        // is there a better way than this?
         try {
-            sandboxTable.table.delete(delete);
-            sandboxTable.table.put(put);
+            RowMutations rm = new RowMutations(rowId);
+            rm.add(delete);
+            rm.add(put);
+
+            // TODO retry?
+            sandboxTable.table
+                    .checkAndMutate(rowId,  SandboxTable.DEFAULT_DIRTY_CF, SandboxTable.DEFAULT_TID_COL,
+                            CompareFilter.CompareOp.EQUAL, null, rm);
         } catch (IOException e) {
             throw new InterruptedIOException(e.toString());
         }
@@ -268,6 +287,22 @@ public class SandboxHTable {
             LOG.error("Error on batch PUT", ex);
             throw new InterruptedIOException(ex.getMessage());
         }
+// TODO iterate
+//        final byte[] rowId = put.getRow();
+//        Delete delete = removeDeletionMarkForPut(put);
+//
+//        RowMutations rm = new RowMutations(rowId);
+//        rm.add(delete);
+//        rm.add(put);
+//
+//        try {
+//            // TODO retry?
+//            sandboxTable.table
+//                    .checkAndMutate(rowId,  SandboxTable.DEFAULT_DIRTY_CF, SandboxTable.DEFAULT_TID_COL,
+//                            CompareFilter.CompareOp.EQUAL, null, rm);
+//        } catch (IOException e) {
+//            throw new InterruptedIOException(e.toString());
+//        }
     }
 
     public static Result getRowOrBefore(SandboxTable sandboxTable, byte[] row, byte[] family) throws IOException {
@@ -275,16 +310,18 @@ public class SandboxHTable {
     }
 
     public static void mutateRow(SandboxTable sandboxTable, RowMutations rm) throws IOException {
-        RowMutations finalRm = new RowMutations(rm.getRow());
+        final byte[] rowId = rm.getRow();
+        RowMutations finalRm = new RowMutations(rowId);
 
         for (Mutation mutation : rm.getMutations()) {
             Class clz = mutation.getClass();
             // if it is a delete, add the put to metadata table
             if (clz.equals(Delete.class)) {
                 Delete delete = (Delete) mutation;
-                Put markForDeletionPut = SandboxTableUtils.markForDeletionPut(sandboxTable, delete);
+//                Put markForDeletionPut = null;SandboxTableUtils.markForDeletionPut(sandboxTable, delete);
                 finalRm.add(delete);
-                finalRm.add(markForDeletionPut);
+                // TODO change!
+//                finalRm.add(markForDeletionPut);
             }  else if (clz.equals(Put.class)) {
                 // if it is a PUT, make sure there is no delete there
                 Put put = (Put) mutation;
@@ -294,8 +331,16 @@ public class SandboxHTable {
             }
         }
 
-        sandboxTable.table.mutateRow(finalRm);
-    }
+		try {
+			// TODO retry?
+			sandboxTable.table.checkAndMutate(rowId,
+					SandboxTable.DEFAULT_DIRTY_CF,
+					SandboxTable.DEFAULT_TID_COL,
+					CompareFilter.CompareOp.EQUAL, null, rm);
+		} catch (IOException e) {
+			throw new InterruptedIOException(e.toString());
+		}
+	}
     
 	/**
 	 * Append might be executed distributedly and it is very important for this
@@ -318,6 +363,7 @@ public class SandboxHTable {
 			throws IOException {
 		byte[] rowId = append.getRow();
 		// fetch which columns are going to be appended
+		// TODO use CellSet
 		NavigableMap<byte[], List<Cell>> familyCellMap = append
 				.getFamilyCellMap();
 
@@ -383,68 +429,53 @@ public class SandboxHTable {
      * @throws IOException
      */
     public static Result increment(SandboxTable sandboxTable, Increment increment) throws IOException {
-        byte[] rowId = increment.getRow();
-        // fetch which columns are going to be appended
-        NavigableMap<byte[], List<Cell>> familyCellMap = increment.getFamilyCellMap();
-
-        RowMutations rowMutations = new RowMutations(rowId);
-
-        // fetch the column versions from both sides
-        Get get = new Get(rowId);
-        for (byte[] family : familyCellMap.keySet()) {
-            List<Cell> cellToIncr = familyCellMap.get(family);
-
-            for (Cell cell : cellToIncr) {
-                byte[] qualifier = CellUtil.cloneQualifier(cell);
-                get.addColumn(family, qualifier);
-            }
-        }
-
-        // fetch merged result
-        Result result = get(sandboxTable, get);
-
-        for (byte[] family : familyCellMap.keySet()) {
-            List<Cell> cellToIncr = familyCellMap.get(family);
-
-            for (Cell cell : cellToIncr) {
-                byte[] qualifier = CellUtil.cloneQualifier(cell);
-
-                // get cell from merged result
-                Cell lastVersionCell = result.getColumnLatestCell(family, qualifier);
-
-                byte[] existingValue = new byte[0];
-                if (lastVersionCell != null) {
-                    existingValue = CellUtil.cloneValue(lastVersionCell);
-                }
-                byte[] appendValue = CellUtil.cloneValue(cell);
-
-                byte[] resultValue = new byte[existingValue.length + appendValue.length];
-                System.arraycopy(existingValue, 0, resultValue, 0, existingValue.length);
-                System.arraycopy(appendValue, 0, resultValue, existingValue.length, appendValue.length);
-
-                Put put = new Put(rowId);
-                put.add(family, qualifier, resultValue);
-                rowMutations.add(put);
-            }
-        }
-
-        mutateRow(sandboxTable, rowMutations);
-        return get(sandboxTable, get);
+    	// TODO
+    	return null;
+    	//        return get(sandboxTable, get);
     }
 
-	public static long incrementColumnValue(SandboxTable sandboxTable,
-			byte[] row, byte[] family, byte[] qualifier, long amount,
-			Durability durability) throws IOException {
-		Increment increment = new Increment(row);
-		increment.addColumn(family, qualifier, amount);
-		increment.setDurability(durability);
-
-		Result result = increment(sandboxTable, increment);
-		byte[] value = CellUtil.cloneValue(result.getColumnLatestCell(family,
-				qualifier));
-		return Bytes.toLong(value);
-
-	}
+    //    public static long incrementColumnValue(SandboxTable sandboxTable, byte[] row, byte[] family, byte[] qualifier, long amount, Durability durability) throws IOException {
+    //        final Get get = new Get(row);
+    //        get.addColumn(family, qualifier);
+    //        Result shadowResult = sandboxTable.table.get(enrichGet(get));
+    //        Result originalResult = null;
+    //
+    //        // iter family and qualifier
+    //        if (!SandboxTableUtils.hasDeletionMarkForColumn(shadowResult, family, qualifier) &&
+    //                !SandboxTableUtils.hasValueForColumn(shadowResult, family, qualifier)) {
+    //
+    //            // fetch only if needed
+    //            if (originalResult == null) {
+    //                originalResult = sandboxTable.originalTable.get(get);
+    //            }
+    //
+    //            // fill the sandbox with original's value first
+    //            if (originalResult.containsColumn(family, qualifier)) {
+    //                // read as long
+    //                long currentValue = Bytes.toLong(originalResult.getValue(family, qualifier));
+    //                long finalValue = currentValue + amount;
+    //
+    //                try {
+    //                    sandboxTable.checkAndPut(r, f, q, null, put));
+    //                } catch (DoNotRetryIOException ex) {
+    //                    exceptThrown = true;
+    //                }
+    //
+    //                Put fillPut = new Put(row);
+    //                fillPut.add(family, qualifier, originalResult.getValue(family, qualifier));
+    //                sandboxTable.table.put(fillPut);
+    //                sandboxTable.table.flushCommits();
+    //            }
+    //        }
+    //    }
+    
+    
+    
+    
+    
+    
+    
+    
 
     public static boolean checkAndPut(SandboxTable sandboxTable, byte[] row, byte[] family, byte[] qualifier, byte[] value, Put put) throws IOException {
         final Get get = new Get(row);
@@ -499,7 +530,8 @@ public class SandboxHTable {
         boolean opSuccess = sandboxTable.table.checkAndDelete(row, family, qualifier, value, delete);
 
         if (opSuccess) {
-            markAsDeleted(sandboxTable, delete);
+            // TODO do smth or delete for other impl
+            //markAsDeleted(sandboxTable, delete);
         }
 
         return opSuccess;

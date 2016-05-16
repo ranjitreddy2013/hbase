@@ -19,9 +19,7 @@ import org.codehaus.jackson.map.SerializationConfig;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.TreeSet;
@@ -30,7 +28,8 @@ public class SandboxAdmin {
     private static final Log LOG = LogFactory.getLog(SandboxAdmin.class);
 
     private static final long REPLICA_WAIT_POLL_INTERVAL = 3000L;
-    private static final long REPLICA_TO_PROXY_WAIT_TIME = 12000L;
+    private static final long REPLICA_TO_PROXY_WAIT_TIME = 6000L;
+    static final String LOCK_ACQ_FAIL_MSG = "Sandbox Push Lock could not be acquired";
 
     MapRFileSystem fs;
     ProxyManager pm;
@@ -41,9 +40,9 @@ public class SandboxAdmin {
 
         createEmptySandboxTable(sandboxTablePath, originalTablePath);
 
-        // creates proxy if needed, selects best proxy and creates all replication flows (sand -> proxy -> original)
-        ProxyManager.ProxyInfo proxyInfo = setupProxy(sandboxTablePath, originalFid);
-        writeSandboxMetadataFile(sandboxTablePath, originalFid, proxyInfo);
+        // creates paused replication from sand to original; original doesn't incl sand in the upstream
+        SandboxAdminUtils.addTableReplica(cmdFactory, sandboxTablePath, originalTablePath, true);
+        writeSandboxMetadataFile(sandboxTablePath, originalFid, SandboxTable.SandboxState.ENABLED);
     }
 
     /**
@@ -69,7 +68,6 @@ public class SandboxAdmin {
         }
 
         // wire proxy
-        // wire proxy
         SandboxAdminUtils.addTableReplica(cmdFactory, sandboxTablePath, selectedProxy.proxyTablePath, true);
         SandboxAdminUtils.addUpstreamTable(cmdFactory, selectedProxy.proxyTablePath, sandboxTablePath);
 
@@ -78,68 +76,80 @@ public class SandboxAdmin {
 
     /**
      *  @param sandboxTablePath
-     * @param wait
      * @param snapshot
      * @param forcePush
      */
-    public void pushSandbox(String sandboxTablePath, boolean wait, boolean snapshot, boolean forcePush) throws IOException, SandboxException {
+    public void pushSandbox(String sandboxTablePath, boolean snapshot, boolean forcePush) throws IOException, SandboxException {
+        // read sandbox metadata
         EnumMap<SandboxTable.InfoType, String> info = SandboxTableUtils.readSandboxInfo(fs, sandboxTablePath);
+        final String originalFid = info.get(SandboxTable.InfoType.ORIGINAL_FID);
+        final Path originalPath = SandboxTableUtils.pathFromFid(fs, originalFid);
+        String originalTablePath = originalPath.toUri().toString();
 
-        String proxyFid = info.get(SandboxTable.InfoType.PROXY_FID);
-        Path proxyPath = SandboxTableUtils.pathFromFid(fs, proxyFid);
-        String proxyTablePath = proxyPath.toUri().toString();
+        final Path lockFile = SandboxTableUtils.lockFilePath(fs, originalFid, originalPath);
+        createLockFile(fs, lockFile);
+
+        // disable sandbox table
+        writeSandboxMetadataFile(sandboxTablePath, originalFid, SandboxTable.SandboxState.PUSH_STARTED);
+
 
         // TODO add flag 'force' to make sure all the modifications have a recent timestamp? (pending on testing scenarios)
 
+        // limit how? TODO ask Kanna for result from experiences
 
-        // Delete metadata CF
+        // Delete sandbox specific CFs
         SandboxAdminUtils.deleteCF(cmdFactory, sandboxTablePath, SandboxTable.DEFAULT_META_CF_NAME);
         SandboxAdminUtils.deleteCF(cmdFactory, sandboxTablePath, SandboxTable.DEFAULT_DIRTY_CF_NAME);
 
+        // add sandbox as upstream of original
+        SandboxAdminUtils.addUpstreamTable(cmdFactory, originalTablePath, sandboxTablePath);
 
         // Resume repl
-        SandboxAdminUtils.resumeReplication(cmdFactory, sandboxTablePath, proxyTablePath);
+        SandboxAdminUtils.resumeReplication(cmdFactory, sandboxTablePath, originalTablePath);
 
 
-        // if wait is set, the application will periodically monitor the state of the replication. this method
+        // the application will periodically monitor the state of the replication. this method
         // will return when the replication has completed
-        if (wait) {
-            int bytesPending = _getReplicationBytesPending(sandboxTablePath);
+        LOG.info("Waiting for sandbox table to finish replication");
+        int bytesPending = _getReplicationBytesPending(sandboxTablePath);
 
-            while (bytesPending > 0) {
-                try {
-                    Thread.sleep(REPLICA_WAIT_POLL_INTERVAL);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-
-                bytesPending = _getReplicationBytesPending(sandboxTablePath);
-            }
-
+        while (bytesPending > 0) {
             try {
-                Thread.sleep(REPLICA_TO_PROXY_WAIT_TIME);
+                Thread.sleep(REPLICA_WAIT_POLL_INTERVAL);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
 
-            LOG.info("Waiting for proxy table to finish replication");
-            bytesPending = _getReplicationBytesPending(proxyTablePath);
-            while (bytesPending > 0) {
-                try {
-                    Thread.sleep(REPLICA_WAIT_POLL_INTERVAL);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-
-                bytesPending = _getReplicationBytesPending(proxyTablePath);
-            }
+            bytesPending = _getReplicationBytesPending(sandboxTablePath);
         }
 
-        // delete sandbox TODO revise this
         try {
-            deleteSandbox(sandboxTablePath);
+            Thread.sleep(REPLICA_TO_PROXY_WAIT_TIME);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        // pause replication
+        SandboxAdminUtils.pauseReplication(cmdFactory, sandboxTablePath, originalTablePath);
+
+        // remove sandbox as upstream of original
+        SandboxAdminUtils.removeUpstreamTable(cmdFactory, originalTablePath, sandboxTablePath);
+
+        // remove lock file
+        fs.delete(lockFile); // TODO might be worth handle exception here
+    }
+
+    private void createLockFile(MapRFileSystem fs, Path lockFile) throws SandboxException {
+
+        try {
+            if (!fs.exists(lockFile)) {
+                // create right away
+                fs.create(lockFile, false); // TODO might be worth to handle exception here
+            } else {
+                throw new SandboxException(LOCK_ACQ_FAIL_MSG, null);
+            }
         } catch (IOException e) {
-            e.printStackTrace(); // TODO handling?
+            throw new SandboxException(LOCK_ACQ_FAIL_MSG, e);
         }
     }
 
@@ -174,41 +184,14 @@ public class SandboxAdmin {
     }
 
     public void deleteSandbox(String sandboxTablePath) throws IOException {
-        EnumMap<SandboxTable.InfoType, String> info = SandboxTableUtils.readSandboxInfo(fs, sandboxTablePath);
-
-        String proxyFid = info.get(SandboxTable.InfoType.PROXY_FID);
-        Path proxyTablePath = SandboxTableUtils.pathFromFid(fs, proxyFid);
-
-        SandboxAdminUtils.removeUpstreamTable(cmdFactory, proxyTablePath.toUri().toString(), sandboxTablePath);
-
         // delete metadata file FIRST
         Path metadataFilePath = SandboxTableUtils.metafilePath(fs, sandboxTablePath);
         fs.delete(metadataFilePath, false);
 
         // deletes sandbox
         SandboxAdminUtils.deleteTable(cmdFactory, sandboxTablePath);
-
-        // TODO do something with proxy?!
-//        String originalTablePath = info.get(SandboxTable.InfoType.ORIGINAL_FID);
     }
 
-    // TODO put this in common project
-    public static String originalTablePathForSandbox(MapRFileSystem fs, String sandboxTablePath) throws IOException {
-        Path metadataFilePath = SandboxTableUtils.metafilePath(fs, sandboxTablePath);
-
-        BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open(metadataFilePath)));
-        // TODO ^^^ this might file as the metadataFile might not exist... should yield an error
-        String originalPath = reader.readLine();
-
-
-
-        if (!fs.exists(new Path(originalPath))) {
-            throw new IOException(String.format("Original table %s does not exist for sandbox %s.",
-                    originalPath, sandboxTablePath));
-        }
-
-        return originalPath;
-    }
 
     @VisibleForTesting
     SandboxAdmin() {
@@ -226,14 +209,15 @@ public class SandboxAdmin {
     }
 
     @VisibleForTesting
-    void writeSandboxMetadataFile(String sandboxTablePath, String originalFid, ProxyManager.ProxyInfo proxyInfo) throws IOException {
+    void writeSandboxMetadataFile(String sandboxTablePath, String originalFid, SandboxTable.SandboxState sandboxState) throws IOException {
         Path sandboxMetadataFilePath = SandboxTableUtils.metafilePath(fs, sandboxTablePath);
 
-        // content contains FID to original table in the 1st line and FID of the proxy in the second line
         StringBuffer sb = new StringBuffer()
                 .append(originalFid).append("\n")
-                .append(proxyInfo.getProxyFid());
+                .append(sandboxState);
 
+
+        // content contains FID to original table
         SandboxAdminUtils.writeToDfsFile(fs, sandboxMetadataFilePath, sb.toString());
     }
 
@@ -274,10 +258,7 @@ public class SandboxAdmin {
         props.put("fid", originalFid);
         props.put("path", originalTablePath);
 
-        TreeSet<ProxyManager.ProxyInfo> proxies = pm.loadProxyInfo(cmdFactory, originalFid, new Path(originalTablePath));
-        props.put("proxyTables", proxies);
-
-        //TODO include the sandboxes
+        //TODO include the sandboxes - how?
 
         ObjectMapper om = new ObjectMapper();
         om.configure(SerializationConfig.Feature.INDENT_OUTPUT, true);

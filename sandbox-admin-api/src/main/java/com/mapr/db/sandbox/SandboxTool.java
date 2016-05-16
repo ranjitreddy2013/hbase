@@ -15,7 +15,6 @@ public class SandboxTool {
     static final String OP_INFO = "info";
     static final String OP_DELETE = "delete";
 
-    static final boolean DEFAULT_WAIT_ON_PUSH = false;
     static final boolean DEFAULT_SNAPSHOT_BEFORE_PUSH = false;
     static final boolean DEFAULT_FORCE_PUSH = false;
 
@@ -52,12 +51,6 @@ public class SandboxTool {
         pushOpts.addOption(OptionBuilder
                 .hasArg() // forces the true or false
                 .withDescription(
-                        String.format("if true, hang until all records are pushed to the original table (default: %s)", DEFAULT_WAIT_ON_PUSH)
-                )
-                .create("wait"));
-        pushOpts.addOption(OptionBuilder
-                .hasArg() // forces the true or false
-                .withDescription(
                         String.format("if true, it takes a snapshot to original table's volume before pushing sandbox (default: %s)", DEFAULT_SNAPSHOT_BEFORE_PUSH)
                 )
                 .create("snapshot"));
@@ -80,7 +73,7 @@ public class SandboxTool {
 
     }
 
-    public static void main(String[] args) throws IOException, SandboxException {
+    public static void main(String[] args) throws IOException {
         if (args.length < 1) {
             printUsage(null);
             System.exit(-1);
@@ -106,33 +99,32 @@ public class SandboxTool {
 
         SandboxAdmin sandboxAdmin = new SandboxAdmin(new Configuration());
 
-        if (operation.equals(OP_CREATE)) {
-            sandboxAdmin.createSandbox(cmd.getOptionValue("path"),
-                    cmd.getOptionValue("original"));
-        } else {
-            if (operation.equals(OP_PUSH)) {
-                boolean wait = DEFAULT_WAIT_ON_PUSH;
-                boolean snapshot = DEFAULT_SNAPSHOT_BEFORE_PUSH;
-                boolean forcePush = DEFAULT_FORCE_PUSH;
+        try {
+            if (operation.equals(OP_CREATE)) {
+                sandboxAdmin.createSandbox(cmd.getOptionValue("path"),
+                        cmd.getOptionValue("original"));
+            } else {
+                if (operation.equals(OP_PUSH)) {
+                    boolean snapshot = DEFAULT_SNAPSHOT_BEFORE_PUSH;
+                    boolean forcePush = DEFAULT_FORCE_PUSH;
 
-                if (cmd.hasOption("wait")) {
-                    wait = Boolean.valueOf(cmd.getOptionValue("wait"));
+                    if (cmd.hasOption("snapshot")) {
+                        snapshot = Boolean.valueOf(cmd.getOptionValue("snapshot"));
+                    }
+
+                    if (cmd.hasOption("force")) {
+                        forcePush = Boolean.valueOf(cmd.getOptionValue("force"));
+                    }
+
+                    sandboxAdmin.pushSandbox(cmd.getOptionValue("path"), snapshot, forcePush);
+                } else if (operation.equals(OP_INFO)) {
+                    sandboxAdmin.info(cmd.getOptionValue("original"));
+                } else if (operation.equals(OP_DELETE)) {
+                    sandboxAdmin.deleteSandbox(cmd.getOptionValue("path"));
                 }
-
-                if (cmd.hasOption("snapshot")) {
-                    snapshot = Boolean.valueOf(cmd.getOptionValue("snapshot"));
-                }
-
-                if (cmd.hasOption("force")) {
-                    forcePush = Boolean.valueOf(cmd.getOptionValue("force"));
-                }
-
-                sandboxAdmin.pushSandbox(cmd.getOptionValue("path"), wait, snapshot, forcePush);
-            } else if (operation.equals(OP_INFO)) {
-                sandboxAdmin.info(cmd.getOptionValue("original"));
-            } else if (operation.equals(OP_DELETE)) {
-                sandboxAdmin.deleteSandbox(cmd.getOptionValue("path"));
             }
+        } catch (SandboxException e) {
+            System.err.println("Error: " + e.getMessage());
         }
     }
 

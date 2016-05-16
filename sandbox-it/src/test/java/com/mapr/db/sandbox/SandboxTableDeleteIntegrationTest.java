@@ -314,8 +314,8 @@ public class SandboxTableDeleteIntegrationTest extends BaseSandboxIntegrationTes
 
         // assert results on sandbox
         // verify results before and after push
-        verifyFinalStateDeleteOnFilledOriginal(hTableSandbox);
         verifyFinalStateDeleteOnFilledOriginal(hTableMimic);
+        verifyFinalStateDeleteOnFilledOriginal(hTableSandbox);
 
         pushSandbox();
         verifyFinalStateDeleteOnFilledOriginal(hTableOriginal);

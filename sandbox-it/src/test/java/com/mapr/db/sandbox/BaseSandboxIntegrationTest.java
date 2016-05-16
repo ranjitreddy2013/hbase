@@ -140,6 +140,6 @@ public abstract class BaseSandboxIntegrationTest {
     }
 
     protected void pushSandbox() throws IOException, SandboxException {
-        sandboxAdmin.pushSandbox(sandboxTablePath, true, false, false);
+        sandboxAdmin.pushSandbox(sandboxTablePath, false, false);
     }
 }
