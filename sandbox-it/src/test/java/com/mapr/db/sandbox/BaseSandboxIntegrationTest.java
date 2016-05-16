@@ -119,6 +119,7 @@ public abstract class BaseSandboxIntegrationTest {
         sandboxAdmin.createSandbox(sandboxTablePath, originalTablePath);
 
         // initialize handlers
+        conf.unset(SandboxTable.SANDBOX_ENABLED);
         hTableOriginal = new HTable(conf, originalTablePath);
         hTableSandbox = new HTable(conf, sandboxTablePath);
         hTableMimic = new HTable(conf, mimicTablePath);

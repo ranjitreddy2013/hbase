@@ -20,11 +20,10 @@ public class SandboxTool {
     static final String OP_DRILL = "drill";
     static final String OP_CLASSPATH = "classpath";
 
-
     static final boolean DEFAULT_SNAPSHOT_BEFORE_PUSH = false;
     static final boolean DEFAULT_FORCE_PUSH = false;
 
-    static Options createOpts, pushOpts, listOpts, deleteOpts;
+    static Options createOpts, pushOpts, listOpts, deleteOpts, drillOpts;
     static Map<String, Options> cmdOperationOpts = Maps.newHashMap();
     static {
         final Option usernameOpt = OptionBuilder.withArgName("username")
@@ -92,8 +91,22 @@ public class SandboxTool {
                 .withDescription("sandbox table path to delete")
                 .isRequired()
                 .create("path"));
+
+        drillOpts = new Options();
+        drillOpts.addOption(usernameOpt);
+        drillOpts.addOption(passwordOpt);
+        drillOpts.addOption(OptionBuilder.withArgName("sandbox table")
+                .hasArg()
+                .withDescription("sandbox table path to convert views to")
+                .isRequired()
+                .create("path"));
+        drillOpts.addOption(OptionBuilder.withArgName("drill conn string")
+                .hasArg()
+                .withDescription("Drill connection string")
+                .create("drill"));
+
         cmdOperationOpts.put(OP_DELETE, deleteOpts);
-//        cmdOperationOpts.put(OP_DRILL, new Options());
+        cmdOperationOpts.put(OP_DRILL, drillOpts);
         cmdOperationOpts.put(OP_CLASSPATH, new Options());
     }
 
@@ -128,7 +141,7 @@ public class SandboxTool {
             	final String password = cmd.hasOption("p") ? cmd.getOptionValue("p") : promptPassword();
                 sandboxAdmin = new SandboxAdmin(new Configuration(), username, password);
             } else {
-                sandboxAdmin = new SandboxAdmin(new Configuration(), null);
+            	sandboxAdmin = new SandboxAdmin(new Configuration());
             }
 
             if (operation.equals(OP_CREATE)) {
@@ -162,8 +175,8 @@ public class SandboxTool {
                 } else if (operation.equals(OP_DELETE)) {
                     sandboxAdmin.deleteSandbox(cmd.getOptionValue("path"));
                 } else if (operation.equals(OP_DRILL)) {
-                    // TODO change this to add some params
-                    sandboxAdmin.convertDrill();
+                    final String drillConnectionString = cmd.hasOption("drill") ? cmd.getOptionValue("drill") : null;
+                    sandboxAdmin.convertDrill(cmd.getOptionValue("path"), drillConnectionString);
                 } else if (operation.equals(OP_CLASSPATH)) {
                     System.out.println(System.getProperty("java.class.path"));
                 }
@@ -179,7 +192,7 @@ public class SandboxTool {
     }
 
     private static boolean requiresPassword(String operation) {
-        return Lists.newArrayList(OP_CREATE, OP_DELETE, OP_PUSH).contains(operation);
+        return Lists.newArrayList(OP_CREATE, OP_DELETE, OP_PUSH, OP_DRILL).contains(operation);
     }
 
     private static String promptPassword() {

@@ -52,6 +52,7 @@
     <dependency>
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>
+      <version>14.0.1</version>
     </dependency>
 
     <dependency>
@@ -68,6 +69,12 @@
     <dependency>
       <groupId>org.apache.hbase</groupId>
       <artifactId>hbase-server</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-lang3</artifactId>
+      <version>3.1</version>
     </dependency>
 
     <dependency>
@@ -119,6 +126,7 @@
                 <includes>
                   <include>org.apache.httpcomponents:httpclient:4.5.1</include>
                   <include>org.apache.httpcomponents:httpcore:4.4.4</include>
+                  <include>com.google.guava:guava:14.0.1</include>
                 </includes>
               </dependency>
               <sources>

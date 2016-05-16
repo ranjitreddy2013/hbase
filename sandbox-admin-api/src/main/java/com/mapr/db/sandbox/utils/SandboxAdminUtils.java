@@ -1,5 +1,6 @@
 package com.mapr.db.sandbox.utils;
 
+import com.google.common.collect.Sets;
 import com.mapr.db.sandbox.SandboxException;
 import com.mapr.fs.MapRFileSystem;
 import com.mapr.rest.MapRRestClient;
@@ -16,6 +17,7 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.Set;
 
 public class SandboxAdminUtils {
     private static final Log LOG = LogFactory.getLog(SandboxAdminUtils.class);
@@ -59,6 +61,18 @@ public class SandboxAdminUtils {
         } catch (SandboxException e) {
             throw new SandboxException(String.format("Error adding replica path = %s, replica = %s, paused = %s",
                     fromTablePath, toTablePath, Boolean.toString(paused)), e);
+        }
+    }
+
+    public static void limitColumnsOnTableReplica(MapRRestClient restClient, String fromTablePath, String toTablePath, String columns) throws SandboxException {
+        final String urlPath =  String.format("/table/replica/edit?path=%s&replica=%s&columns=%s",
+                fromTablePath, toTablePath, columns);
+
+        try {
+            restClient.callCommand(urlPath, false);
+        } catch (SandboxException e) {
+            throw new SandboxException(String.format("Error editing replica path = %s, replica = %s, columns = %s",
+                    fromTablePath, toTablePath, columns), e);
         }
     }
 
@@ -278,4 +292,27 @@ public class SandboxAdminUtils {
 
         throw new SandboxException("Error retrieving running service state in the cluster: service = " + serviceName, null);
     }
+
+    public static Set<String> getTableCFSet(MapRRestClient restClient, String tablePath) throws SandboxException {
+        Set<String> cfSet = Sets.newHashSet();
+        final String urlPath =  String.format("/table/cf/list?path=%s&columns=cfname", tablePath);
+
+        try {
+            JSONObject result = restClient.callCommand(urlPath, true);
+            JSONArray data = result.has("data") ? result.getJSONArray("data") : null;
+
+            if (data != null) {
+                for (int i = 0; i < data.length(); i++) {
+                    cfSet.add(data.getJSONObject(i).getString("cfname"));
+                }
+            }
+        } catch (SandboxException e) {
+            throw new SandboxException("Error getting CF list for table path " + tablePath, e);
+        } catch (JSONException e) {
+            throw new SandboxException("Error parsing CF list for table path " + tablePath, e);
+        }
+
+        return cfSet;
+    }
+
 }

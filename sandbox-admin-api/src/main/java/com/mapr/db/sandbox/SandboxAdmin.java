@@ -9,6 +9,7 @@ import org.apache.commons.configuration.CompositeConfiguration;
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.commons.configuration.SystemConfiguration;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.commons.math3.util.Pair;
@@ -22,6 +23,7 @@ import java.io.IOException;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static com.mapr.db.sandbox.utils.SandboxAdminUtils.replicationBytesPending;
 
@@ -49,7 +51,6 @@ public class SandboxAdmin {
             throw new RuntimeException(e);
         }
 
-        // TODO play with these settings in configuration
         REPLICA_WAIT_POLL_INTERVAL = toolConfig.getLong(CONF_WAIT_POLL_INTERVAL, 3000L);
         REPLICA_TO_PROXY_WAIT_TIME = toolConfig.getLong(CONF_PUSH_EXTRA_WAIT_INTERVAL, 6000L);
     }
@@ -59,6 +60,9 @@ public class SandboxAdmin {
     DrillViewConverter drillViewConverter;
     SandboxTablesListManager globalSandboxListManager;
 
+    private String username;
+    private String password;
+
     public SandboxAdmin(Configuration configuration) throws SandboxException {
         this(configuration,
                 toolConfig.getString("sandbox.username", "mapr"),
@@ -66,17 +70,17 @@ public class SandboxAdmin {
     }
 
     public SandboxAdmin(Configuration configuration, String username, String password) throws SandboxException {
-        this(configuration, new MapRRestClient(toolConfig.getStringArray("sandbox.rest_urls"), username, password));
-    }
+        this.username = username;
+        this.password = password; // be careful what you keep in memory
 
-    public SandboxAdmin(Configuration configuration, MapRRestClient restClient) throws SandboxException {
         try {
             fs = (MapRFileSystem) FileSystem.get(configuration);
         } catch (IOException e) {
             e.printStackTrace();
         }
+
         globalSandboxListManager = SandboxTablesListManager.global(fs);
-        this.restClient = restClient;
+        this.restClient = new MapRRestClient(toolConfig.getStringArray("sandbox.rest_urls"), username, password);
 
         if (restClient != null) {
             restClient.testCredentials();
@@ -128,7 +132,6 @@ public class SandboxAdmin {
         createLockFile(fs, lockFile);
 
         try {
-            // TODO add flag 'force' to make sure all the modifications have a recent timestamp? (pending on testing scenarios)
             if (forcePush) {
                 boolean forcePushSuccess = false;
                 try {
@@ -141,8 +144,33 @@ public class SandboxAdmin {
                 System.out.println(forcePushSuccess);
             }
 
-            // prevent any kind of editing to the sandbox table // TODO work in progress
-//            SandboxAdminUtils.lockEditsForTable(sandboxTablePath);
+            LOG.info(LOG_MSG_PREFIX + "Checking if all sandbox CFs are present in original table");
+            Set<String> sandboxCFs = SandboxAdminUtils.getTableCFSet(restClient, sandboxTablePath);
+            Set<String> originalCFs = SandboxAdminUtils.getTableCFSet(restClient, originalTablePath);
+
+            // check if original table have all CF created
+            sandboxCFs.remove(SandboxTable.DEFAULT_DIRTY_CF_NAME);
+            sandboxCFs.remove(SandboxTable.DEFAULT_META_CF_NAME);
+            if (!originalCFs.containsAll(sandboxCFs)) {
+                sandboxCFs.removeAll(originalCFs);
+                throw new SandboxException(String.format("Original Table %s does not contain all column families marked for replication: %s ." +
+                        "Please create them first and re-attempt push operation.",
+                        originalTablePath, StringUtils.join(sandboxCFs, ",")), null);
+            }
+
+            String sandboxCfStr = StringUtils.join(sandboxCFs, ",");
+            // edit the replication link to limit to those columns (all except meta/dirty)
+            LOG.info(LOG_MSG_PREFIX + "Limiting replication to columns = " + sandboxCfStr);
+            SandboxAdminUtils.limitColumnsOnTableReplica(restClient,
+                    sandboxTablePath, originalTablePath, sandboxCfStr);
+
+            // prevent any kind of editing to the sandbox table
+            LOG.info(LOG_MSG_PREFIX + "Lock up sandbox CFs for changes");
+            SandboxAdminUtils.lockEditsForTable(restClient, sandboxTablePath, SandboxTable.DEFAULT_DIRTY_CF_NAME);
+            SandboxAdminUtils.lockEditsForTable(restClient, sandboxTablePath, SandboxTable.DEFAULT_META_CF_NAME);
+            for (String sandboxCF : sandboxCFs) {
+                SandboxAdminUtils.lockEditsForTable(restClient, sandboxTablePath, sandboxCF);
+            }
 
             // disable sandbox table
             writeSandboxMetadataFile(sandboxTablePath, originalFid, SandboxTable.SandboxState.SNAPSHOT_CREATE);
@@ -224,10 +252,14 @@ public class SandboxAdmin {
             if (!fs.exists(lockFile)) {
                 // create right away
                 fs.create(lockFile, false);
+                LOG.info(String.format("Lock acquired (file = %s)", lockFile.toString()));
             } else {
+                LOG.info(String.format("Failed to acquire lock. File already exists. (file = %s)",
+                        lockFile.toString()));
                 throw new SandboxException(LOCK_ACQ_FAIL_MSG, null);
             }
         } catch (IOException e) {
+            LOG.info(String.format("Error while acquiring lock (file = %s)", lockFile.toString()));
             throw new SandboxException(LOCK_ACQ_FAIL_MSG, e);
         }
     }
@@ -314,11 +346,33 @@ public class SandboxAdmin {
         return originalSandboxListManager.getListFromFile();
     }
 
-    public void convertDrill() throws SandboxException {
-        if (drillViewConverter == null) {
-            drillViewConverter = new DrillViewConverter(toolConfig.getString(CONF_DRILL_JDBC_CONN_STR, ""));
+    public void convertDrill(String sandboxTablePath, String drillConnectionString) throws SandboxException, IOException {
+        if (drillConnectionString == null) {
+            drillConnectionString = toolConfig.getString(CONF_DRILL_JDBC_CONN_STR,"");
         }
 
-        drillViewConverter.X();
+        final String LOG_MSG_PREFIX = "Sandbox " + sandboxTablePath + " > ";
+
+        if (!SandboxAdminUtils.isServiceRunningOnCluster(restClient, "drill-bits")) {
+            throw new SandboxException("Drill service is required for sandbox table push.", null);
+        }
+
+        // read sandbox metadata
+        EnumMap<SandboxTable.InfoType, String> info = SandboxTableUtils.readSandboxInfo(fs, sandboxTablePath);
+        final String originalFid = info.get(SandboxTable.InfoType.ORIGINAL_FID);
+        final Path originalPath = SandboxTableUtils.pathFromFid(fs, originalFid);
+        String originalTablePath = originalPath.toUri().toString();
+
+        if (drillViewConverter == null) {
+            LOG.info(LOG_MSG_PREFIX + "Connecting to Drill with connStr = " + drillConnectionString);
+            drillViewConverter = new DrillViewConverter(
+                    drillConnectionString,
+                    username, password,
+                    originalTablePath, sandboxTablePath);
+        }
+
+        LOG.info(LOG_MSG_PREFIX + "Drill Views conversion started.");
+        drillViewConverter.convertViews();
+        LOG.info(LOG_MSG_PREFIX + "Drill Views conversion ended.");
     }
 }
