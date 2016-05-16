@@ -19,6 +19,7 @@ import java.io.InterruptedIOException;
 import java.util.*;
 
 import static com.mapr.db.sandbox.SandboxTable.DEFAULT_META_CF;
+import static com.mapr.db.sandbox.SandboxTableUtils.buildAnnotatedColumn;
 
 public class SandboxHTable {
     private static final Log LOG = LogFactory.getLog(SandboxHTable.class);
@@ -242,7 +243,7 @@ public class SandboxHTable {
                 byte[] family = CellUtil.cloneFamily(cell);
                 byte[] qualif = CellUtil.cloneQualifier(cell);
 
-                byte[] annotatedColumn = SandboxTableUtils.buildAnnotatedColumn(family, qualif);
+                byte[] annotatedColumn = buildAnnotatedColumn(family, qualif);
                 delete.deleteColumn(DEFAULT_META_CF, annotatedColumn);
             }
         }
@@ -445,9 +446,24 @@ public class SandboxHTable {
 
 	}
 
-    public static boolean checkAndPut(SandboxTable sandboxTable, byte[] row, byte[] family, byte[] qualifier, byte[] value, Put put) {
-        // TODO
-        return false;
+    public static boolean checkAndPut(SandboxTable sandboxTable, byte[] row, byte[] family, byte[] qualifier, byte[] value, Put put) throws IOException {
+        final Get get = new Get(row);
+        get.addColumn(family, qualifier);
+        Result shadowResult = sandboxTable.table.get(enrichGet(get));
+
+        if (!SandboxTableUtils.hasValueForColumn(shadowResult, family, qualifier)) {
+            Result originalResult = sandboxTable.originalTable.get(get);
+
+            // fill the sandbox with original's value first
+            if (originalResult.containsColumn(family, qualifier)) {
+                Put fillPut = new Put(row);
+                fillPut.add(family, qualifier, originalResult.getValue(family, qualifier));
+                put(sandboxTable, fillPut);
+                sandboxTable.table.flushCommits();
+            }
+        }
+
+        return sandboxTable.table.checkAndPut(row, family, qualifier, value, put);
     }
 
     public static boolean checkAndDelete(SandboxTable sandboxTable, byte[] row, byte[] family, byte[] qualifier, byte[] value, Delete delete) {

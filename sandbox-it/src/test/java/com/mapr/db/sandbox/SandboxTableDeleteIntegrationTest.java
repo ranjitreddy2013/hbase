@@ -3,7 +3,6 @@ package com.mapr.db.sandbox;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -12,7 +11,13 @@ import static com.mapr.db.sandbox.SandboxTestUtils.*;
 import static org.junit.Assert.assertEquals;
 
 public class SandboxTableDeleteIntegrationTest extends BaseSandboxIntegrationTest {
-    Scan scan = new Scan();
+    static Scan scan, scanCF;
+
+    static {
+        scan = new Scan();
+        scanCF = new Scan();
+        scanCF.addFamily(CF1);
+    }
 
     final byte[] testRowId1 = "aRowId1".getBytes();
     final byte[] testRowId2 = "aRowId2".getBytes();
@@ -99,7 +104,120 @@ public class SandboxTableDeleteIntegrationTest extends BaseSandboxIntegrationTes
         assertEquals("the right cell stays after all the deletions", "v2", getCellValue(hTable, testRowId1, CF1, COL2));
     }
 
-    @Ignore // TODO remove once fixed
+    @Test
+    public void testSingleCellDeletion() throws IOException, SandboxException {
+        loadData(hTableOriginal);
+        loadData(hTableMimic);
+
+        // verify there is something there
+        assertEquals("2", getCellValue(hTableOriginal, existingRowId2, CF1, COL1));
+        assertEquals("2", getCellValue(hTableSandbox, existingRowId2, CF1, COL1));
+        assertEquals("2", getCellValue(hTableMimic, existingRowId2, CF1, COL1));
+
+        // delete cell
+        delCell(hTableSandbox, existingRowId2, CF1, COL1);
+        delCell(hTableMimic, existingRowId2, CF1, COL1);
+
+        // verify there is nothing there
+
+        verifySingleRowDeletionState(hTableMimic);
+        verifySingleRowDeletionState(hTableSandbox);
+
+        pushSandbox();
+
+        verifySingleRowDeletionState(hTableOriginal);
+    }
+
+    private void verifySingleRowDeletionState(HTable hTable) throws IOException {
+        assertEquals(null, getCellValue(hTable, existingRowId2, CF1, COL1));
+    }
+
+    @Test
+    public void testColFamilyDeletion() throws IOException, SandboxException {
+        loadData(hTableOriginal);
+        loadData(hTableMimic);
+
+        ResultScanner origResults, sandResults, mimicResults;
+
+        // scan all rows and count
+        origResults = hTableOriginal.getScanner(scanCF);
+        sandResults = hTableSandbox.getScanner(scanCF);
+        mimicResults = hTableMimic.getScanner(scanCF);
+        // verify there's nothing on any table
+        assertEquals("original table should have cells", 20L, countCells(origResults));
+        assertEquals("sandbox table should return cells", 20L, countCells(sandResults));
+        assertEquals("mimic table should have cells", 20L, countCells(mimicResults));
+
+        // verify there is something there
+        assertEquals("2", getCellValue(hTableSandbox, existingRowId2, CF1, COL1));
+        assertEquals("2", getCellValue(hTableMimic, existingRowId2, CF1, COL1));
+
+        // delete cell
+        delCell(hTableSandbox, existingRowId2, CF1, COL1);
+        delCell(hTableMimic, existingRowId2, CF1, COL1);
+
+        // verify there is nothing there
+
+        verifyColFamilyDeletionState(hTableMimic);
+        verifyColFamilyDeletionState(hTableSandbox);
+
+        pushSandbox();
+
+        verifyColFamilyDeletionState(hTableOriginal);
+    }
+
+    private void verifyColFamilyDeletionState(HTable hTable) throws IOException {
+        ResultScanner results = hTable.getScanner(scanCF);
+        assertEquals("table should have one less cell", 19L, countCells(results));
+
+        assertEquals(null, getCellValue(hTable, existingRowId2, CF1, COL1));
+    }
+
+    @Test
+    public void testFullRowDeletion() throws IOException, SandboxException {
+        loadData(hTableOriginal);
+        loadData(hTableMimic);
+
+        ResultScanner origResults, sandResults, mimicResults;
+
+        // scan all rows and count
+        origResults = hTableOriginal.getScanner(scan);
+        sandResults = hTableSandbox.getScanner(scan);
+        mimicResults = hTableMimic.getScanner(scan);
+        // verify there's nothing on any table
+        assertEquals("original table should have rows", 20L, countRows(origResults));
+        assertEquals("sandbox table should return rows", 20L, countRows(sandResults));
+        assertEquals("mimic table should have rows", 20L, countRows(mimicResults));
+
+        // verify there is something there
+        assertEquals("2", getCellValue(hTableSandbox, existingRowId2, CF1, COL1));
+        assertEquals("2", getCellValue(hTableMimic, existingRowId2, CF1, COL1));
+
+        // delete cell
+        delRow(hTableSandbox, existingRowId2);
+        delRow(hTableMimic, existingRowId2);
+
+        // verify there is nothing there
+
+        verifyRowDeletionState(hTableMimic);
+        verifyRowDeletionState(hTableSandbox);
+
+        pushSandbox();
+
+        verifyColFamilyDeletionState(hTableOriginal);
+    }
+
+    private void verifyRowDeletionState(HTable hTable) throws IOException {
+        ResultScanner results = hTable.getScanner(scan);
+        assertEquals("table should have one less row", 19L, countRows(results));
+        results = hTable.getScanner(scan);
+        assertEquals("table should have one less row", 38L, countCells(results));
+
+        assertEquals(null, getCellValue(hTable, existingRowId2, CF1, COL1));
+    }
+
+
+    //    @Ignore // TODO failing due to error in single row deletion after push
     @Test
     public void testDeleteOnFilledOriginal() throws IOException, SandboxException {
         // CASE: original filled, sandbox empty
@@ -214,5 +332,4 @@ public class SandboxTableDeleteIntegrationTest extends BaseSandboxIntegrationTes
     }
 
     // TODO batch delete
-
 }

@@ -112,10 +112,10 @@ public abstract class BaseSandboxIntegrationTest {
         fs.delete(new Path(testWorkingDir), true);
     }
 
-    protected final byte[] existingRowId = "row1".getBytes();
-    protected final byte[] existingRowId2 = "row2".getBytes();
-    protected final byte[] existingRowId3 = "row3".getBytes();
-    protected final byte[] newRowId = "row30".getBytes();
+    protected static final byte[] existingRowId = "row1".getBytes();
+    protected static final byte[] existingRowId2 = "row2".getBytes();
+    protected static final byte[] existingRowId3 = "row3".getBytes();
+    protected static final byte[] newRowId = "row30".getBytes();
 
     protected void loadData(HTable hTable) throws InterruptedIOException, RetriesExhaustedWithDetailsException {
         for (int i = 0; i < 20; i++) {

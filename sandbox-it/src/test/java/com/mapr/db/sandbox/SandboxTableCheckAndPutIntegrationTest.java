@@ -1,227 +1,193 @@
 package com.mapr.db.sandbox;
 
-//import org.apache.hadoop.conf.Configuration;
-//import org.apache.hadoop.hbase.HBaseConfiguration;
-//import org.apache.hadoop.hbase.HColumnDescriptor;
-//import org.apache.hadoop.hbase.HTableDescriptor;
-//import org.apache.hadoop.hbase.TableName;
-//import org.apache.hadoop.hbase.client.*;
-//import org.apache.hadoop.hbase.util.Bytes;
-//import org.junit.AfterClass;
-//import org.junit.BeforeClass;
-//import org.junit.Test;
-//
-//import java.io.IOException;
-//
-//import static com.mapr.db.sandbox.SandboxTable.DEFAULT_META_CF;
-//import static org.junit.Assert.assertEquals;
-//import static org.junit.Assert.assertFalse;
+import org.apache.hadoop.hbase.DoNotRetryIOException;
+import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.ResultScanner;
+import org.apache.hadoop.hbase.client.Scan;
+import org.junit.Ignore;
+import org.junit.Test;
+
+import java.io.IOException;
+
+import static com.mapr.db.sandbox.SandboxTestUtils.*;
+import static org.junit.Assert.*;
 
 public class SandboxTableCheckAndPutIntegrationTest extends BaseSandboxIntegrationTest {
-//  protected static Configuration conf = HBaseConfiguration.create();
-//  protected static String productionTablePath;
-//  protected static String sandboxTablePath;
+    static Put put1,put2;
+
+    static {
+        put1 = new Put(newRowId);
+        put1.add(CF1, COL2, "otherString".getBytes());
+
+        put2 = new Put(existingRowId);
+        put2.add(CF1, COL2, "otherString".getBytes());
+    }
+
+    Scan scan = new Scan();
+
+    @Ignore
+    @Test
+    public void testCheckAndPutOnEmptyOriginal() throws IOException {
+        // CASE original empty, sandbox empty
+        // verify there's nothing in the tables
+        ResultScanner origResults, sandResults, mimicResults;
+
+        origResults = hTableOriginal.getScanner(scan);
+        sandResults = hTableSandbox.getScanner(scan);
+        mimicResults = hTableMimic.getScanner(scan);
+        assertEquals("original table should have no rows", 0L, countRows(origResults));
+        assertEquals("sandbox table should have no rows", 0L, countRows(sandResults));
+        assertEquals("mimic table should have no rows", 0L, countRows(mimicResults));
+
+
+
+        // CASE: insert when cell is empty
+        assertFalse("should fail on non-existent cell",
+                hTableSandbox.checkAndPut(newRowId, CF1, COL1, "someString".getBytes(), put1));
+        assertFalse("should fail on non-existent cell",
+                hTableMimic.checkAndPut(newRowId, CF1, COL1, "someString".getBytes(), put1));
+
+        assertEquals("no value should be added", null, getCellValue(hTableSandbox, newRowId, CF1, COL1));
+        assertEquals("no value should be added", null, getCellValue(hTableSandbox, newRowId, CF1, COL2));
+        assertEquals("no value should be added", null, getCellValue(hTableMimic, newRowId, CF1, COL1));
+        assertEquals("no value should be added", null, getCellValue(hTableMimic, newRowId, CF1, COL2));
+
+        // CASE original empty, sandbox filled
+        // insert when cell is filled but doesn't match value
+        setCellValue(hTableSandbox, newRowId, CF1, COL1, "v1");
+        setCellValue(hTableMimic, newRowId, CF1, COL1, "v1");
+
+        assertFalse("should fail on non-matching value cell",
+                hTableSandbox.checkAndPut(newRowId, CF1, COL1, "someString".getBytes(), put1));
+        assertFalse("should fail on non-matching value cell",
+                hTableMimic.checkAndPut(newRowId, CF1, COL1, "someString".getBytes(), put1));
+
+        assertEquals("filled value should be there", "v1", getCellValue(hTableSandbox, newRowId, CF1, COL1));
+        assertEquals("no value should be added", null, getCellValue(hTableSandbox, newRowId, CF1, COL2));
+        assertEquals("filled value should be there", "v1", getCellValue(hTableMimic, newRowId, CF1, COL1));
+        assertEquals("no value should be added", null, getCellValue(hTableMimic, newRowId, CF1, COL2));
+
+
+        // CASE: insert when cell is filled and matches value
+        setCellValue(hTableSandbox, newRowId, CF1, COL1, "v2");
+        setCellValue(hTableMimic, newRowId, CF1, COL1, "v2");
+
+        assertTrue("should work on matching value cell",
+                hTableSandbox.checkAndPut(newRowId, CF1, COL1, "v2".getBytes(), put1));
+        assertTrue("should work on matching value cell",
+                hTableMimic.checkAndPut(newRowId, CF1, COL1, "v2".getBytes(), put1));
+
+        assertEquals("filled value should be there", "v2", getCellValue(hTableSandbox, newRowId, CF1, COL1));
+        assertEquals("no value should be added", "otherString", getCellValue(hTableSandbox, newRowId, CF1, COL2));
+        assertEquals("filled value should be there", "v2", getCellValue(hTableMimic, newRowId, CF1, COL1));
+        assertEquals("no value should be added", "otherString", getCellValue(hTableMimic, newRowId, CF1, COL2));
+
+        // CASE: insert when cell is filled in sandbox, then deleted
+        setCellValue(hTableSandbox, newRowId, CF1, COL2, "v3");
+        setCellValue(hTableMimic, newRowId, CF1, COL2, "v3");
+        delCell(hTableSandbox, newRowId, CF1, COL1);
+        delCell(hTableMimic, newRowId, CF1, COL1);
+
+        // TODO transform the below assertions in separate verify function and call before and after push
+        assertFalse("should not work on deleted cell",
+                hTableSandbox.checkAndPut(newRowId, CF1, COL1, "v2".getBytes(), put1));
+        assertFalse("should not work on deleted cell",
+                hTableMimic.checkAndPut(newRowId, CF1, COL1, "v2".getBytes(), put1));
+
+        assertEquals("no value should be returned for deleted cell", null, getCellValue(hTableSandbox, newRowId, CF1, COL1));
+        assertEquals("value should remain untouched", "v3", getCellValue(hTableSandbox, newRowId, CF1, COL2));
+
+        // TODO mimic will have the deleted value if the execution goes too fast – wtf is wrong with deletes?
+        assertEquals("no value should be returned for deleted cell", null, getCellValue(hTableMimic, newRowId, CF1, COL1));
+        assertEquals("value should remain untouched", "v3", getCellValue(hTableMimic, newRowId, CF1, COL2));
+    }
+
+
+    @Ignore
+    @Test
+    public void testCheckAndPutOnFilledOriginal() throws IOException, SandboxException {
+        // CASE original filled, sandbox empty
+        fillOriginalTable();
+
+        // verify there's nothing in the tables
+        ResultScanner origResults, sandResults, mimicResults;
+
+        origResults = hTableOriginal.getScanner(scan);
+        sandResults = hTableSandbox.getScanner(scan);
+        mimicResults = hTableMimic.getScanner(scan);
+        assertEquals("original table should have no rows", 20L, countRows(origResults));
+        assertEquals("sandbox table should have no rows", 20L, countRows(sandResults));
+        assertEquals("mimic table should have no rows", 20L, countRows(mimicResults));
+
+
+        // CASE: insert when cell is empty
+        assertFalse("should fail on non-existent cell",
+                hTableSandbox.checkAndPut(existingRowId, CF2, COL1, "someString".getBytes(), put2));
+        assertFalse("should fail on non-existent cell",
+                hTableMimic.checkAndPut(existingRowId, CF2, COL1, "someString".getBytes(), put2));
+
+        assertEquals("no value should be added", "1", getCellValue(hTableSandbox, existingRowId, CF1, COL1));
+        assertEquals("no value should be added", null, getCellValue(hTableSandbox, existingRowId, CF1, COL2));
+        assertEquals("no value should be added", "1", getCellValue(hTableMimic, existingRowId, CF1, COL1));
+        assertEquals("no value should be added", null, getCellValue(hTableMimic, existingRowId, CF1, COL2));
+
+        // insert when cell is filled but doesn't match value
+        assertFalse("should fail on non-matching value cell",
+                hTableSandbox.checkAndPut(existingRowId, CF1, COL1, "someString".getBytes(), put2));
+        assertFalse("should fail on non-matching value cell",
+                hTableMimic.checkAndPut(existingRowId, CF1, COL1, "someString".getBytes(), put2));
+
+        assertEquals("filled value should be there", "1", getCellValue(hTableSandbox, existingRowId, CF1, COL1));
+        assertEquals("no value should be added", null, getCellValue(hTableSandbox, existingRowId, CF1, COL2));
+        assertEquals("filled value should be there", "1", getCellValue(hTableMimic, existingRowId, CF1, COL1));
+        assertEquals("no value should be added", null, getCellValue(hTableMimic, existingRowId, CF1, COL2));
+
+        // insert when cell is filled and matches value
+        assertTrue("should work on matching value cell",
+                hTableSandbox.checkAndPut(existingRowId, CF1, COL1, "1".getBytes(), put2));
+        assertTrue("should work on matching value cell",
+                hTableMimic.checkAndPut(existingRowId, CF1, COL1, "1".getBytes(), put2));
+
+        assertEquals("filled value should be there", "1", getCellValue(hTableSandbox, existingRowId, CF1, COL1));
+        assertEquals("no value should be added", "otherString", getCellValue(hTableSandbox, existingRowId, CF1, COL2));
+        assertEquals("filled value should be there", "1", getCellValue(hTableMimic, existingRowId, CF1, COL1));
+        assertEquals("no value should be added", "otherString", getCellValue(hTableMimic, existingRowId, CF1, COL2));
+
+        // CASE original filled, sandbox filled (by previous checkAndPut)
+        // non matching case
+        assertFalse("should work on non matching value cell",
+                hTableSandbox.checkAndPut(existingRowId, CF1, COL2, "1".getBytes(), put2));
+        assertFalse("should work on non matching value cell",
+                hTableMimic.checkAndPut(existingRowId, CF1, COL2, "1".getBytes(), put2));
+
+        // CASE: insert when cell is filled in sandbox, then deleted
+        setCellValue(hTableSandbox, existingRowId, CF1, COL2, "v3");
+        setCellValue(hTableMimic, existingRowId, CF1, COL2, "v3");
+        delCell(hTableSandbox, existingRowId, CF1, COL1);
+        delCell(hTableMimic, existingRowId, CF1, COL1);
+
+        // TODO transform the below assertions in separate verify function and call before and after push
+        verifyFinalStateCheckAndPutOnFilledOriginal(hTableSandbox);
+        verifyFinalStateCheckAndPutOnFilledOriginal(hTableMimic);
 //
-//  protected static HTable hTableProduction;
-//  protected static HTable hTableSandbox;
+//        pushSandbox();
 //
-//  @BeforeClass
-//  public static void createProductionTable() throws IOException {
-//      assureWorkingDirExists();
-//      hba = new HBaseAdmin(conf);
-//      String productionTableName = Long.toHexString(Double.doubleToLongBits(Math.random()));
-//      productionTablePath = String.format("%s%s", TABLE_PREFIX, productionTableName);
-//      HTableDescriptor tableDescriptor = new HTableDescriptor(TableName.valueOf(productionTablePath));
-//      tableDescriptor.addFamily(new HColumnDescriptor("cf1"));
-//      tableDescriptor.addFamily(new HColumnDescriptor("cf2"));
-//      tableDescriptor.addFamily(new HColumnDescriptor("cf3"));
-//      hba.createTable(tableDescriptor);
-//
-//      // insert some data to production
-//      hTableProduction = new HTable(conf, productionTablePath);
-//      for (int i = 0; i < 25; i++) {
-//        Put put = new Put(Bytes.toBytes(Integer.toString(i)));
-//        put.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(i)));
-//        put.add(Bytes.toBytes("cf1"), Bytes.toBytes("col2"), Bytes.toBytes(Integer.toString(i)));
-//        put.add(Bytes.toBytes("cf2"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(i)));
-//        put.add(Bytes.toBytes("cf3"), Bytes.toBytes("col3"), Bytes.toBytes(Integer.toString(i)));
-//        hTableProduction.put(put);
-//      }
-//      hTableProduction.flushCommits();
-//  }
-//
-//
-//  @Test
-//  public void testSandboxCheckAndPut() throws IOException, SandboxException, Exception {
-//    String sandboxTablePath = String.format("%s_new_sand", productionTablePath);
-//    String sandboxTableMetaFile = String.format("%s_new_meta", sandboxTablePath);
-//    sandboxAdmin.createSandbox(sandboxTablePath, productionTablePath);
-//    hTableSandbox = new HTable(conf, sandboxTablePath);
-//
-//    // not in production and not in sandbox
-//    Put put1 = new Put(Bytes.toBytes("row100"));
-//    put1.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes("100"));
-//    boolean res1 = hTableSandbox.checkAndPut(Bytes.toBytes("row100"),
-//      Bytes.toBytes("cf1"), Bytes.toBytes("col1"), null, put1); // non-existent-row
-//    boolean res2 = hTableSandbox.checkAndPut(Bytes.toBytes("row1"),
-//      Bytes.toBytes("cf100"), Bytes.toBytes("col1"), null, put1); // row-exists + non-existent-cf
-//    boolean res3 = hTableSandbox.checkAndPut(Bytes.toBytes("row1"),
-//      Bytes.toBytes("cf1"), Bytes.toBytes("col100"), null, put1); // row-exists + cf-exists + non-existent-qual
-//    boolean res4 = hTableSandbox.checkAndPut(Bytes.toBytes("row1"),
-//      Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes("1"), put1); // row-exists + cf-exists + qual-exists
-//
-//
-//    Get get = new Get(Bytes.toBytes("row100"));
-//    get.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col1"));
-//    Result resultProduction = hTableProduction.get(get);
-//    Result resultSandbox = hTableSandbox.get(get);
-//    String prod = Bytes.toString(resultProduction.getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-//    String sand = Bytes.toString(resultSandbox.getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-//
-//    assertFalse("checkAndPut should be False for checking a non-existent-row in sandbox", res1);
-//    //TODO check the below two. they should throw exception
-//    //assertTrue("checkAndPut should be True for existent-row + non-existent-cf in sandbox", res2);
-//    //assertTrue("checkAndPut should be True for existent-row + existent-cf + non-existent-qual in sandbox", res3);
-//    assertEquals("value should be null for production", prod, null);
-//    //assertEquals("value should be 100 for sandbox", sand, 100L);
-//
-//    get = new Get(Bytes.toBytes("row100"));
-//    get.addFamily(DEFAULT_META_CF);
-//    // TODO query the _shadow table for checking deletionMark
-//    //resultSandbox = hTableSandbox.get(get);
-//    //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
-//    //assertEquals("value should be null for production", sand, null);
-//    //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-//    //assertFalse("deletionMark should be removed if present", hTableOriginal.exists(get));
-//
-//    // not in production, but in sandbox
-//    put1 = new Put(Bytes.toBytes("row100"));
-//    put1.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(100)));
-//    hTableSandbox.put(put1); // row100 is only in sandbox
-//
-//    Put put2 = new Put(Bytes.toBytes("row100"));
-//    put2.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes("200"));
-//    res1 = hTableSandbox.checkAndPut(Bytes.toBytes("row999"),
-//      Bytes.toBytes("cf1"), Bytes.toBytes("col1"), null, put2); // non-existent-row
-//    res2 = hTableSandbox.checkAndPut(Bytes.toBytes("row100"),
-//      Bytes.toBytes("cf100"), Bytes.toBytes("col1"), null, put2); // row-exists + non-existent-cf
-//    res3 = hTableSandbox.checkAndPut(Bytes.toBytes("row100"),
-//      Bytes.toBytes("cf1"), Bytes.toBytes("col100"), null, put2); // row-exists + cf-exists + non-existent-qual
-//    res4 = hTableSandbox.checkAndPut(Bytes.toBytes("row100"),
-//      Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes("100"), put2); // row-exists + cf-exists + qual-exists
-//
-//    get = new Get(Bytes.toBytes("row100"));
-//    get.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col1"));
-//    resultProduction = hTableProduction.get(get);
-//    resultSandbox = hTableSandbox.get(get);
-//    prod = Bytes.toString(resultProduction.getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-//    sand = Bytes.toString(resultSandbox.getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-//
-//    assertFalse("checkAndPut should be False for checking a non-existent-row in sandbox", res1);
-//    //TODO check the below two. they should throw exception
-//    //assertTrue("checkAndPut should be True for existent-row + non-existent-cf in sandbox", res2);
-//    //assertTrue("checkAndPut should be True for existent-row + existent-cf + non-existent-qual in sandbox", res3);
-//    //assertTrue("checkAndPut should be True for existent-row + existent-cf + existent-qual in sandbox", res4);
-//    assertEquals("value should be null for production", prod, null);
-//    //assertEquals("value should be overwritten for sandbox", sand, "200");
-//
-//    get = new Get(Bytes.toBytes(Integer.toString(100)));
-//    get.addFamily(DEFAULT_META_CF);
-//    // TODO query the _shadow table for checking deletionMark
-//    //resultSandbox = hTableSandbox.get(get);
-//    //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
-//    //assertEquals("value should be null for production", sand, null);
-//    //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-//    //assertFalse("deletionMark should be removed if present", hTableOriginal.exists(get));
-//
-//
-//    // in production, but not in sandbox
-//    // add some additional data only in production to prepare for this test
-//    hTableProduction = new HTable(conf, productionTablePath);
-//    for (int i = 35; i < 40; i++) {
-//      Put put = new Put(Bytes.toBytes(Integer.toString(i)));
-//      put.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(i)));
-//      hTableProduction.put(put);
-//    }
-//    hTableProduction.flushCommits();
-//
-//    Put put3 = new Put(Bytes.toBytes(Integer.toString(35)));
-//    put3.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(200)));
-//    res1 = hTableSandbox.checkAndPut(Bytes.toBytes(Integer.toString(35)),
-//      Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(35)), put3); // non-existent-row
-//    res2 = hTableSandbox.checkAndPut(Bytes.toBytes(Integer.toString(35)),
-//      Bytes.toBytes("cf100"), Bytes.toBytes("col1"), null, put3); // row-exists + non-existent-cf
-//    res3 = hTableSandbox.checkAndPut(Bytes.toBytes(Integer.toString(35)),
-//      Bytes.toBytes("cf1"), Bytes.toBytes("col100"), null, put3); // row-exists + cf-exists + non-existent-qual
-//    res4 = hTableSandbox.checkAndPut(Bytes.toBytes(Integer.toString(35)),
-//      Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes("100"), put3); // row-exists + cf-exists + qual-exists
-//
-//    get = new Get(Bytes.toBytes(Integer.toString(35)));
-//    get.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col1"));
-//    resultProduction = hTableProduction.get(get);
-//    resultSandbox = hTableSandbox.get(get);
-//    prod = Bytes.toString(resultProduction.getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-//    sand = Bytes.toString(resultSandbox.getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-//
-//    assertFalse("checkAndPut should be False for checking a non-existent-row in sandbox", res1);
-//    //TODO check the below two. they should throw exception
-//    //assertTrue("checkAndPut should be True for existent-row + non-existent-cf in sandbox", res2);
-//    //assertTrue("checkAndPut should be True for existent-row + existent-cf + non-existent-qual in sandbox", res3);
-//    //assertTrue("checkAndPut should be True for existent-row + existent-cf + existent-qual in sandbox", res4);
-//    assertEquals("value should be as is for production", prod, "35");
-//    //assertEquals("new value in sandbox should take preference", sand, "200");
-//
-//    get = new Get(Bytes.toBytes(Integer.toString(100)));
-//    get.addFamily(DEFAULT_META_CF);
-//    // TODO query the _shadow table for checking deletionMark
-//    //resultSandbox = hTableSandbox.get(get);
-//    //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
-//    //assertEquals("value should be null for production", sand, null);
-//    //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-//    //assertFalse("deletionMark should be removed if present", hTableOriginal.exists(get));
-//
-//
-//    // in production and in sandbox. sandbox should take preference
-//    Put put4 = new Put(Bytes.toBytes(Integer.toString(0)));
-//    put4.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(200)));
-//    res1 = hTableSandbox.checkAndPut(Bytes.toBytes(Integer.toString(999)),
-//      Bytes.toBytes("cf1"), Bytes.toBytes("col1"), null, put4); // non-existent-row
-//    res2 = hTableSandbox.checkAndPut(Bytes.toBytes(Integer.toString(0)),
-//      Bytes.toBytes("cf100"), Bytes.toBytes("col1"), null, put4); // row-exists + non-existent-cf
-//    res3 = hTableSandbox.checkAndPut(Bytes.toBytes(Integer.toString(0)),
-//      Bytes.toBytes("cf1"), Bytes.toBytes("col100"), null, put4); // row-exists + cf-exists + non-existent-qual
-//    res4 = hTableSandbox.checkAndPut(Bytes.toBytes(Integer.toString(0)),
-//      Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes("100"), put4); // row-exists + cf-exists + qual-exists
-//
-//    get = new Get(Bytes.toBytes(Integer.toString(0)));
-//    get.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col1"));
-//    resultProduction = hTableProduction.get(get);
-//    resultSandbox = hTableSandbox.get(get);
-//    prod = Bytes.toString(resultProduction.getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-//    sand = Bytes.toString(resultSandbox.getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-//
-//    assertFalse("checkAndPut should be False for checking a non-existent-row in sandbox", res1);
-//    //TODO check the below two. they should throw exception
-//    //assertTrue("checkAndPut should be True for existent-row + non-existent-cf in sandbox", res2);
-//    //assertTrue("checkAndPut should be True for existent-row + existent-cf + non-existent-qual in sandbox", res3);
-//    //assertTrue("checkAndPut should be True for existent-row + existent-cf + existent-qual in sandbox", res4);
-//    assertEquals("value should be as is for production", prod, "0");
-//    assertEquals("new value in sandbox should take preference", sand, "200");
-//
-//    get = new Get(Bytes.toBytes(Integer.toString(0)));
-//    get.addFamily(DEFAULT_META_CF);
-//    // TODO query the _shadow table for checking deletionMark
-//    //resultSandbox = hTableSandbox.get(get);
-//    //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
-//    //assertEquals("value should be null for production", sand, null);
-//    //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-//    //assertFalse("deletionMark should be removed if present", hTableOriginal.exists(get)); */
-//  }
-//
-//  @AfterClass
-//  public static void cleanupTable() throws IOException {
-//    String sandboxTablePath = String.format("%s_new_sand", productionTablePath);
-//    sandboxAdmin.deleteSandbox(sandboxTablePath);
-//    hba.deleteTable(productionTablePath);
-//  }
+//        verifyFinalStateCheckAndPutOnFilledOriginal(hTableOriginal);
+    }
+
+    private void verifyFinalStateCheckAndPutOnFilledOriginal(HTable hTable) throws IOException {
+        boolean exceptThrown = false;
+        try {
+            hTable.checkAndPut(existingRowId, CF1, COL1, "1".getBytes(), put2);
+        } catch (DoNotRetryIOException ex) {
+            exceptThrown = true;
+        }
+
+        assertTrue("should not work on deleted cell", exceptThrown);
+
+        assertEquals("no value should be returned for deleted cell", null, getCellValue(hTable, existingRowId, CF1, COL1));
+        assertEquals("value should remain untouched", "v3", getCellValue(hTable, existingRowId, CF1, COL2));
+    }
+
 }

@@ -70,6 +70,7 @@ public class SandboxTestUtils {
 
     public static String getCellValue(HTable hTable, byte[] rowId, byte[] columnFamily, byte[] columnQualifier) throws IOException {
         Get get = new Get(rowId);
+        get.addColumn(columnFamily, columnFamily);
         return Bytes.toString(hTable.get(get).getValue(columnFamily, columnQualifier));
     }
 

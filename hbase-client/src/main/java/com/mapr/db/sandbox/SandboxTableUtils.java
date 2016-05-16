@@ -180,4 +180,13 @@ public class SandboxTableUtils {
 
         return markDeletionPut;
     }
+
+    public static boolean hasValueForColumn(Result result, byte[] family, byte[] qualifier) {
+        if (result != null && !result.isEmpty()) {
+            return !result.containsColumn(DEFAULT_META_CF, buildAnnotatedColumn(family, qualifier)) &&
+                    result.containsColumn(family, qualifier);
+        }
+
+        return false;
+    }
 }

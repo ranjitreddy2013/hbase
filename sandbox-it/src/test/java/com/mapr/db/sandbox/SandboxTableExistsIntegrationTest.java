@@ -3,6 +3,7 @@ package com.mapr.db.sandbox;
 import com.google.common.collect.Lists;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -16,8 +17,13 @@ public class SandboxTableExistsIntegrationTest extends BaseSandboxIntegrationTes
     byte[] testRowId2 = "rowId5".getBytes();
     final Get get1 = new Get(testRowId1);
     final Get get2 = new Get(testRowId2);
+    final Get filledGet1 = new Get(existingRowId);
+    final Get filledGet2 = new Get(existingRowId2);
 
     final List<Get> batchGet = Lists.newArrayList(
+            new Get(testRowId1),
+            new Get(testRowId2));
+    final List<Get> filledBatchGet = Lists.newArrayList(
             new Get(testRowId1),
             new Get(testRowId2));
 
@@ -92,7 +98,84 @@ public class SandboxTableExistsIntegrationTest extends BaseSandboxIntegrationTes
                 hTable.exists(get2));
     }
 
-    // TODO do for filled original table
+    @Ignore // TODO failing due to error in single row deletion after push
+    @Test
+    public void testExistsOnFilledOriginal() throws IOException, SandboxException {
+        // CASE original filled, sandbox empty
+        loadData(hTableOriginal);
+        loadData(hTableMimic);
+
+        assertTrue("original should contain the row",
+                hTableOriginal.exists(filledGet1));
+        assertTrue("sandbox should contain the row",
+                hTableSandbox.exists(filledGet1));
+        assertTrue("mimic should contain the row",
+                hTableMimic.exists(filledGet1));
+        assertTrue("original should contain the row",
+                hTableOriginal.exists(filledGet2));
+        assertTrue("sandbox should contain the row",
+                hTableSandbox.exists(filledGet2));
+        assertTrue("mimic should contain the row",
+                hTableMimic.exists(filledGet2));
+
+        // delete on sandbox
+        delCell(hTableSandbox, existingRowId2, CF1, COL1);
+        delCell(hTableSandbox, existingRowId2, CF2, COL2);
+        delCell(hTableMimic, existingRowId2, CF1, COL1);
+        delCell(hTableMimic, existingRowId2, CF2, COL2);
+
+        assertTrue("original should contain the row",
+                hTableOriginal.exists(filledGet1));
+        assertTrue("sandbox should contain the row",
+                hTableSandbox.exists(filledGet1));
+        assertTrue("mimic should contain the row",
+                hTableMimic.exists(filledGet1));
+        assertTrue("original should contain the row",
+                hTableOriginal.exists(filledGet2));
+        assertFalse("sandbox should contain the row",
+                hTableSandbox.exists(filledGet2));
+        assertFalse("mimic should contain the row",
+                hTableMimic.exists(filledGet2));
+
+
+        // CASE original filled, sandbox filled
+        // add row to sandbox (and mimic)
+        setCellValue(hTableSandbox, existingRowId2, CF1, COL1, "v1");
+        setCellValue(hTableMimic, existingRowId2, CF1, COL1, "v1");
+
+        assertTrue("original should contain the row",
+                hTableOriginal.exists(filledGet1));
+        assertTrue("sandbox should contain the row",
+                hTableSandbox.exists(filledGet1));
+        assertTrue("mimic should contain the row",
+                hTableMimic.exists(filledGet1));
+        assertTrue("original should contain the row",
+                hTableOriginal.exists(filledGet2));
+        assertTrue("sandbox should contain the newly added row",
+                hTableSandbox.exists(filledGet2));
+        assertTrue("mimic should contain the newly added row",
+                hTableMimic.exists(filledGet2));
+
+        // delete the column
+        delCell(hTableSandbox, existingRowId2, CF1, COL1);
+        delCell(hTableSandbox, existingRowId2, CF2, COL2);
+        delCell(hTableMimic, existingRowId2, CF1, COL1);
+        delCell(hTableMimic, existingRowId2, CF2, COL2);
+
+        verifyFinalStateOnFilledOrig(hTableMimic);
+        verifyFinalStateOnFilledOrig(hTableSandbox);
+
+        pushSandbox();
+
+        verifyFinalStateOnFilledOrig(hTableOriginal);
+    }
+
+    private void verifyFinalStateOnFilledOrig(HTable hTable) throws IOException {
+        assertTrue("table should contain the row",
+                hTable.exists(filledGet1));
+        assertFalse("table should not contain the row",
+                hTable.exists(filledGet2));
+    }
 
     @Test
     public void testBatchExistsForEmptyOriginal() throws IOException, SandboxException {

@@ -13,8 +13,9 @@ public class SandboxTool {
     static final String OP_CREATE = "create";
     static final String OP_PUSH = "push";
     static final String OP_INFO = "info";
+    static final String OP_DELETE = "delete";
 
-    static Options createOpts, pushOpts, infoOpts;
+    static Options createOpts, pushOpts, infoOpts, deleteOpts;
     static Map<String, Options> cmdOperationOpts = Maps.newHashMap();
     static {
         createOpts = new Options();
@@ -48,6 +49,15 @@ public class SandboxTool {
                 .withDescription("hang until all records are pushed to the original table")
                 .create("wait"));
         cmdOperationOpts.put(OP_PUSH, pushOpts);
+
+        deleteOpts = new Options();
+        deleteOpts.addOption(OptionBuilder.withArgName("sandbox table")
+                .hasArg()
+                .withDescription("sandbox table path to delete")
+                .isRequired()
+                .create("path"));
+        cmdOperationOpts.put(OP_DELETE, deleteOpts);
+
     }
 
     public static void main(String[] args) throws IOException, SandboxException {
@@ -84,6 +94,8 @@ public class SandboxTool {
                     cmd.hasOption("wait"));
         } else if (operation.equals(OP_INFO)) {
             sandboxAdmin.info(cmd.getOptionValue("original"));
+        } else if (operation.equals(OP_DELETE)) {
+            sandboxAdmin.deleteSandbox(cmd.getOptionValue("path"));
         }
     }
 
