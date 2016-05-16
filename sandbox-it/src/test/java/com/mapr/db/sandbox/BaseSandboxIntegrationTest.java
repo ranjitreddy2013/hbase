@@ -113,6 +113,8 @@ public abstract class BaseSandboxIntegrationTest {
     }
 
     protected final byte[] existingRowId = "row1".getBytes();
+    protected final byte[] existingRowId2 = "row2".getBytes();
+    protected final byte[] existingRowId3 = "row3".getBytes();
     protected final byte[] newRowId = "row30".getBytes();
 
     protected void loadData(HTable hTable) throws InterruptedIOException, RetriesExhaustedWithDetailsException {

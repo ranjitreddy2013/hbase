@@ -29,6 +29,9 @@ public class SandboxTestUtils {
     public static long countRows(ResultScanner scanner) throws IOException {
         long result = 0L;
         for (Result r : scanner) {
+            if (r.isEmpty()) {
+                continue;
+            }
             ++result;
         }
         return result;
@@ -37,7 +40,11 @@ public class SandboxTestUtils {
     public static long countCells(ResultScanner scanner) throws IOException {
         long result = 0L;
         for (Result r : scanner) {
-            for (Cell cell : r.listCells()) {
+            if (r.isEmpty()) {
+                continue;
+            }
+
+            for (Cell cell : r.rawCells()) {
                 ++result;
             }
         }
@@ -76,6 +83,19 @@ public class SandboxTestUtils {
     public static void delCell(HTable hTable, byte[] rowId, byte[] columnFamily, byte[] columnQualifier) throws IOException {
         Delete delete = new Delete(rowId);
         delete.deleteColumn(columnFamily, columnQualifier);
+        hTable.delete(delete);
+        hTable.flushCommits();
+    }
+
+    public static void delFamily(HTable hTable, byte[] rowId, byte[] columnFamily) throws IOException {
+        Delete delete = new Delete(rowId);
+        delete.deleteFamily(columnFamily);
+        hTable.delete(delete);
+        hTable.flushCommits();
+    }
+
+    public static void delRow(HTable hTable, byte[] rowId) throws IOException {
+        Delete delete = new Delete(rowId);
         hTable.delete(delete);
         hTable.flushCommits();
     }

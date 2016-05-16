@@ -5,26 +5,29 @@ import com.google.common.collect.Maps;
 import com.mapr.fs.MapRFileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.CellUtil;
 import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.mapr.AbstractHTable;
-import org.apache.hadoop.hbase.util.Bytes;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 import static com.mapr.db.sandbox.SandboxTable.DEFAULT_META_CF;
 import static com.mapr.db.sandbox.SandboxTable.METADATA_FILENAME_FORMAT;
 
 public class SandboxTableUtils {
     private final static byte[] ONE = new byte[] { 1 };
-    public static final String FAMILY_QUALIFIER_SEPARATOR = ":";
+    public static final byte[] FAMILY_QUALIFIER_SEPARATOR = ":".getBytes();
 
     public static Path metafilePath(MapRFileSystem mfs, String sandboxTablePath) throws IOException {
         String sandboxFid = getFidFromPath(mfs, sandboxTablePath);
@@ -76,26 +79,53 @@ public class SandboxTableUtils {
     }
 
 
-    static String buildAnnotatedColumnStr(String family, String column) {
-        return family + FAMILY_QUALIFIER_SEPARATOR + column;
+    static byte[] buildAnnotatedColumn(byte[] family, byte[] qualif) {
+        byte[] result = new byte[family.length + FAMILY_QUALIFIER_SEPARATOR.length + qualif.length];
+        System.arraycopy(family, 0, result, 0, family.length);
+        System.arraycopy(FAMILY_QUALIFIER_SEPARATOR, 0, result, family.length, FAMILY_QUALIFIER_SEPARATOR.length);
+        System.arraycopy(qualif, 0, result, family.length + FAMILY_QUALIFIER_SEPARATOR.length, qualif.length);
+
+        return result;
+    }
+
+
+    /**
+     * Retrieves row's columns from the table for the specified row
+     * @return map of family -> list ( column qualifiers )
+     */
+    static Map<ByteBuffer, List<byte[]>> getRowColumns(AbstractHTable hTable, byte[] row) throws IOException {
+        return getRowColumns(hTable, row, null);
     }
 
     /**
-     * Retrieves row's columns from the original table
-     * @param originalTable the original table
+     * Retrieves row's columns from the table for the specified row and column family
+     * @param hTable the table
      * @param row the row
      * @param family the family
-     * @return list of columns present in that row -> family
+     * @return map of family -> list ( column qualifiers )
      * @throws IOException
      */
-    static List<String> getRowColumns(AbstractHTable originalTable, byte[] row, byte[] family) throws IOException {
+    static Map<ByteBuffer, List<byte[]>> getRowColumns(AbstractHTable hTable, byte[] row, byte[] family) throws IOException {
         Get get = new Get(row);
-        get.addFamily(family);
-        Result getResult = originalTable.get(get);
 
-        List<String> result = Lists.newArrayList();
-        for (Cell cell : getResult.listCells()) {
-            result.add(Bytes.toStringBinary(cell.getQualifierArray(), cell.getQualifierOffset(), cell.getQualifierLength()));
+        if (family != null) {
+            get.addFamily(family);
+        }
+
+        Result getResult = hTable.get(get);
+
+        Map<ByteBuffer, List<byte[]>> result = Maps.newHashMap();
+        for (Cell cell : getResult.rawCells()) {
+            final byte[] cellFamily = CellUtil.cloneFamily(cell);
+            final byte[] cellQualif = CellUtil.cloneQualifier(cell);
+
+            List<byte[]> familyQualifiers = result.get(ByteBuffer.wrap(cellFamily));
+            if (familyQualifiers == null) {
+                familyQualifiers = Lists.newArrayList();
+                result.put(ByteBuffer.wrap(cellFamily), familyQualifiers);
+            }
+
+            familyQualifiers.add(cellQualif);
         }
 
         return result;
@@ -104,25 +134,47 @@ public class SandboxTableUtils {
     static Put markForDeletionPut(SandboxTable sandboxTable, Delete delete) throws IOException {
         Put markDeletionPut = new Put(delete.getRow());
 
-        for (List<Cell> cells : delete.getFamilyCellMap().values()) {
-            for (Cell cell : cells) {
-                String family = Bytes.toStringBinary(cell.getFamilyArray(), cell.getFamilyOffset(), cell.getFamilyLength());
-                String qualif = Bytes.toStringBinary(cell.getQualifierArray(), cell.getQualifierOffset(), cell.getQualifierLength());
+        // list of families / columns to delete
+        Collection<List<Cell>> cellsByCF = delete.getFamilyCellMap().values();
 
-                List<String> columns = Lists.newArrayList();
+        Map<ByteBuffer, List<byte[]>> cellsToMarkDeletion = Maps.newHashMap();
+
+        if (cellsByCF.size() == 0) {
+            // delete the whole row
+            cellsToMarkDeletion.putAll(getRowColumns(sandboxTable.originalTable, delete.getRow()));
+        } else {
+            for (List<Cell> cells : cellsByCF) {
+                for (Cell cell : cells) {
+                    byte[] family = CellUtil.cloneFamily(cell);
+                    byte[] qualif = CellUtil.cloneQualifier(cell);
 
 
-                if (qualif.isEmpty()) {
-                    // delete all the columns in this column family
-                    columns.addAll(getRowColumns(sandboxTable.originalTable, delete.getRow(), family.getBytes()));
-                } else {
-                    columns.add(qualif);
+                    List<byte[]> qualifiersMarkedForDeletion = cellsToMarkDeletion.get(ByteBuffer.wrap(family));
+                    if (qualifiersMarkedForDeletion == null) {
+                        qualifiersMarkedForDeletion = Lists.newArrayList();
+                        cellsToMarkDeletion.put(ByteBuffer.wrap(family), qualifiersMarkedForDeletion);
+                    }
+
+                    // add whole qualifiers existing in the original table for this family
+                    if (qualif == null || qualif.length == 0) {
+                        // delete all the columns in this column family
+                        Map<ByteBuffer, List<byte[]>> familyQualifiersMap = getRowColumns(sandboxTable.originalTable, delete.getRow(), family);
+                        List<byte[]> familyQualifiers = familyQualifiersMap.get(ByteBuffer.wrap(family));
+
+                        if (familyQualifiers != null) {
+                            qualifiersMarkedForDeletion.addAll(familyQualifiers);
+                        }
+                    } else {
+                        qualifiersMarkedForDeletion.add(qualif);
+                    }
                 }
+            }
+        }
 
-                for (String column : columns) {
-                    String annotatedColumn = buildAnnotatedColumnStr(family, column);
-                    markDeletionPut.add(DEFAULT_META_CF, annotatedColumn.getBytes(), ONE);
-                }
+        for (Map.Entry<ByteBuffer, List<byte[]>> entry : cellsToMarkDeletion.entrySet()) {
+            final byte[] family = entry.getKey().array();
+            for (byte[] qualif : entry.getValue()) {
+                markDeletionPut.add(DEFAULT_META_CF, buildAnnotatedColumn(family, qualif), ONE);
             }
         }
 

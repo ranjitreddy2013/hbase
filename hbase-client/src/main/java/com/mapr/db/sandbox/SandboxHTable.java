@@ -46,7 +46,6 @@ public class SandboxHTable {
 
     public static Result get(SandboxTable sandboxTable, final Get get) throws IOException {
         Result originalResult = sandboxTable.originalTable.get(get);
-
         Result shadowResult = sandboxTable.table.get(enrichGet(get));
 
         // if result exists on sandbox...
@@ -100,14 +99,25 @@ public class SandboxHTable {
             if (Bytes.compareTo(cell.getFamilyArray(), cell.getFamilyOffset(), cell.getFamilyLength(),
                     DEFAULT_META_CF, 0, DEFAULT_META_CF.length) == 0) {
 
-                String deleted = Bytes.toStringBinary(cell.getQualifierArray(), cell.getQualifierOffset(), cell.getQualifierLength());
-                String[] deletedCol = deleted.split(SandboxTableUtils.FAMILY_QUALIFIER_SEPARATOR);
+                final byte[] annotatedColumn = CellUtil.cloneQualifier(cell);
+                String annotatedColumnStr = Bytes.toStringBinary(annotatedColumn);
+                final String separator = Bytes.toStringBinary(SandboxTableUtils.FAMILY_QUALIFIER_SEPARATOR);
+
+                int sepIndex = annotatedColumnStr.indexOf(separator);
+
+                if (sepIndex == -1) {
+                    continue; // bad representation? TODO log
+                }
 
                 try {
-                    Cell deletedCell = new KeyValue(row, deletedCol[0].getBytes(), deletedCol[1].getBytes());
+                    byte[] family = Arrays.copyOfRange(annotatedColumn, 0, sepIndex);
+                    byte[] qualif = Arrays.copyOfRange(annotatedColumn, sepIndex + separator.length(), annotatedColumn.length);
+
+                    Cell deletedCell = new KeyValue(row, family, qualif);
                     markedForDeletion.add(deletedCell);
                 } catch (ArrayIndexOutOfBoundsException ex) {
                     // doesn't matter... it's a parsing error on the metadata notation
+                    // TODO log
                 }
             } else {
                 // if not, cell is extending / overriding current original row's value
@@ -229,11 +239,11 @@ public class SandboxHTable {
         Delete delete = new Delete(put.getRow());
         for (List<Cell> cells : put.getFamilyCellMap().values()) {
             for (Cell cell : cells) {
-                String family = Bytes.toStringBinary(cell.getFamilyArray(), cell.getFamilyOffset(), cell.getFamilyLength());
-                String qualif = Bytes.toStringBinary(cell.getQualifierArray(), cell.getQualifierOffset(), cell.getQualifierLength());
+                byte[] family = CellUtil.cloneFamily(cell);
+                byte[] qualif = CellUtil.cloneQualifier(cell);
 
-                String annotatedColumn = SandboxTableUtils.buildAnnotatedColumnStr(family, qualif);
-                delete.deleteColumn(DEFAULT_META_CF, annotatedColumn.getBytes());
+                byte[] annotatedColumn = SandboxTableUtils.buildAnnotatedColumn(family, qualif);
+                delete.deleteColumn(DEFAULT_META_CF, annotatedColumn);
             }
         }
 
@@ -285,6 +295,23 @@ public class SandboxHTable {
 
         sandboxTable.table.mutateRow(finalRm);
     }
+    
+	/**
+	 * Append might be executed distributedly and it is very important for this
+	 * operation to happen on the server side. For this reason, the sandbox
+	 * implementation only makes sure if the column to be appended exists on
+	 * both original and sandbox. If it does only exist on original the value is
+	 * read and used as an increment (it fails if it is not an integer). If not,
+	 * a normal append is executed in the sandbox table and a delete
+	 * markForDeletion column as well (just like in PUTs).
+	 * 
+	 * @param sandboxTable
+	 *            the sandboxTable definition
+	 * @param append
+	 *            the append definition
+	 * @return the appended result
+	 * @throws IOException
+	 */
 
 	public static Result append(SandboxTable sandboxTable, Append append)
 			throws IOException {
@@ -342,15 +369,81 @@ public class SandboxHTable {
 		return get(sandboxTable, get);
 	}
 
-    public static Result increment(SandboxTable sandboxTable, Increment increment) {
-        // TODO
-        return null;
+    /**
+     * Increment might be executed distributedly and it is very important for this operation to
+     * happen on the server side. For this reason, the sandbox implementation only makes sure if the column
+     * to be incremented exists on both original and sandbox. If it does only exist on original the value is
+     * read and used as an increment (it fails if it is not an integer).
+     * If not, a normal increment is executed in the sandbox table and a delete markForDeletion column
+     * as well (just like in PUTs).
+     * @param sandboxTable
+     * @param increment
+     * @return
+     * @throws IOException
+     */
+    public static Result increment(SandboxTable sandboxTable, Increment increment) throws IOException {
+        byte[] rowId = increment.getRow();
+        // fetch which columns are going to be appended
+        NavigableMap<byte[], List<Cell>> familyCellMap = increment.getFamilyCellMap();
+
+        RowMutations rowMutations = new RowMutations(rowId);
+
+        // fetch the column versions from both sides
+        Get get = new Get(rowId);
+        for (byte[] family : familyCellMap.keySet()) {
+            List<Cell> cellToIncr = familyCellMap.get(family);
+
+            for (Cell cell : cellToIncr) {
+                byte[] qualifier = CellUtil.cloneQualifier(cell);
+                get.addColumn(family, qualifier);
+            }
+        }
+
+        // fetch merged result
+        Result result = get(sandboxTable, get);
+
+        for (byte[] family : familyCellMap.keySet()) {
+            List<Cell> cellToIncr = familyCellMap.get(family);
+
+            for (Cell cell : cellToIncr) {
+                byte[] qualifier = CellUtil.cloneQualifier(cell);
+
+                // get cell from merged result
+                Cell lastVersionCell = result.getColumnLatestCell(family, qualifier);
+
+                byte[] existingValue = new byte[0];
+                if (lastVersionCell != null) {
+                    existingValue = CellUtil.cloneValue(lastVersionCell);
+                }
+                byte[] appendValue = CellUtil.cloneValue(cell);
+
+                byte[] resultValue = new byte[existingValue.length + appendValue.length];
+                System.arraycopy(existingValue, 0, resultValue, 0, existingValue.length);
+                System.arraycopy(appendValue, 0, resultValue, existingValue.length, appendValue.length);
+
+                Put put = new Put(rowId);
+                put.add(family, qualifier, resultValue);
+                rowMutations.add(put);
+            }
+        }
+
+        mutateRow(sandboxTable, rowMutations);
+        return get(sandboxTable, get);
     }
 
-    public static long incrementColumnValue(SandboxTable sandboxTable, byte[] row, byte[] family, byte[] qualifier, long amount, Durability durability) {
-        // TODO
-        return 0;
-    }
+	public static long incrementColumnValue(SandboxTable sandboxTable,
+			byte[] row, byte[] family, byte[] qualifier, long amount,
+			Durability durability) throws IOException {
+		Increment increment = new Increment(row);
+		increment.addColumn(family, qualifier, amount);
+		increment.setDurability(durability);
+
+		Result result = increment(sandboxTable, increment);
+		byte[] value = CellUtil.cloneValue(result.getColumnLatestCell(family,
+				qualifier));
+		return Bytes.toLong(value);
+
+	}
 
     public static boolean checkAndPut(SandboxTable sandboxTable, byte[] row, byte[] family, byte[] qualifier, byte[] value, Put put) {
         // TODO
