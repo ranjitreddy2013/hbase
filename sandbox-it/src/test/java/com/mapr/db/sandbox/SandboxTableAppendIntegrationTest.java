@@ -3,7 +3,6 @@ package com.mapr.db.sandbox;
 import org.apache.hadoop.hbase.client.Append;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -66,7 +65,6 @@ public class SandboxTableAppendIntegrationTest extends BaseSandboxIntegrationTes
                 getCellValue(hTable, newRowId, CF2, COL1));
     }
 
-    @Ignore
     @Test
     public void testAppendAfterDeleteOnFilledOriginal() throws IOException, SandboxException {
         loadData(hTableOriginal);
@@ -109,7 +107,7 @@ public class SandboxTableAppendIntegrationTest extends BaseSandboxIntegrationTes
         hTableMimic.flushCommits();
 
         verifyFinalStateAppendAfterDeleteOnFilledOriginal(hTableSandbox);
-        verifyFinalStateAppendAfterDeleteOnFilledOriginal(hTableMimic); // TODO failing here :O
+        verifyFinalStateAppendAfterDeleteOnFilledOriginal(hTableMimic);
 
         pushSandbox();
         verifyFinalStateAppendAfterDeleteOnFilledOriginal(hTableOriginal);

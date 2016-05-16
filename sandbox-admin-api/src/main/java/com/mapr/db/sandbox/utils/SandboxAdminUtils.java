@@ -1,5 +1,6 @@
 package com.mapr.db.sandbox.utils;
 
+import com.google.common.collect.Lists;
 import com.mapr.cli.DbCfCommands;
 import com.mapr.cli.DbCommands;
 import com.mapr.cli.DbReplicaCommands;
@@ -14,6 +15,7 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.List;
 
 public class SandboxAdminUtils {
     public static void printErrors(CommandOutput commandOutput) {
@@ -60,26 +62,33 @@ public class SandboxAdminUtils {
     }
 
     public static void createSimilarTable(CLICommandFactory cmdFactory, String tablePath, String similarToTablePath) {
-        ProcessedInput tableCreationInput = new ProcessedInput(new String[] {
+        List<String> params = Lists.newArrayList(
                 "table", "create",
-                "-path", tablePath,
-                "-copymetafrom", similarToTablePath,
-                "-copymetatype", "all"
-        });
+                "-path", tablePath
+        );
+
+        if (similarToTablePath != null) {
+            params.addAll(Lists.<String>newArrayList(
+                    "-copymetafrom", similarToTablePath,
+                    "-copymetatype", "all"
+            ));
+        }
+
+        ProcessedInput input = new ProcessedInput(params.toArray(new String[params.size()]));
 
         // Create sandbox table
         CommandOutput commandOutput = null;
         try {
-            DbCommands tableCreateCmd = (DbCommands) cmdFactory.getCLI(tableCreationInput);
-            commandOutput = tableCreateCmd.executeRealCommand();
+            DbCommands cmd = (DbCommands) cmdFactory.getCLI(input);
+            commandOutput = cmd.executeRealCommand();
         } catch (Exception e) {
-            SandboxAdminUtils.printErrors(commandOutput);
             e.printStackTrace(); // TODO handle properly
         }
     }
 
-    public static void setupReplication(CLICommandFactory cmdFactory, String fromTablePath, String toTablePath, boolean paused) {
-        ProcessedInput addTableReplicaInput = new ProcessedInput(new String[] {
+
+    public static void addTableReplica(CLICommandFactory cmdFactory, String fromTablePath, String toTablePath, boolean paused) {
+        ProcessedInput input = new ProcessedInput(new String[] {
                 "table", "replica", "add",
                 "-path", fromTablePath,
                 "-replica", toTablePath,
@@ -87,32 +96,100 @@ public class SandboxAdminUtils {
                 "-paused", Boolean.toString(paused)
         });
 
-        ProcessedInput addUpstreamTableInput = new ProcessedInput(new String[] {
+
+        // Add Replica Table
+        CommandOutput commandOutput = null;
+        try {
+            DbReplicaCommands cmd = (DbReplicaCommands) cmdFactory.getCLI(input);
+            commandOutput = cmd.executeRealCommand();
+        } catch (Exception e) {
+            e.printStackTrace(); // TODO handle properly
+        }
+    }
+
+    public static void addUpstreamTable(CLICommandFactory cmdFactory, String toTablePath, String fromTablePath) {
+        ProcessedInput input = new ProcessedInput(new String[] {
                 "table", "upstream", "add",
                 "-path", toTablePath,
                 "-upstream", fromTablePath
         });
 
-        // Add Replica Table
+        // Add Upstream Table
         CommandOutput commandOutput = null;
         try {
-            DbReplicaCommands addReplicaCmd = (DbReplicaCommands) cmdFactory.getCLI(addTableReplicaInput);
-            commandOutput = addReplicaCmd.executeRealCommand();
+            DbUpstreamCommands cmd = (DbUpstreamCommands) cmdFactory.getCLI(input);
+            commandOutput = cmd.executeRealCommand();
         } catch (Exception e) {
-            SandboxAdminUtils.printErrors(commandOutput);
             e.printStackTrace(); // TODO handle properly
         }
+    }
+
+    public static void removeUpstreamTable(CLICommandFactory cmdFactory, String toTablePath, String fromTablePath) {
+        ProcessedInput input = new ProcessedInput(new String[] {
+                "table", "upstream", "remove",
+                "-path", toTablePath,
+                "-upstream", fromTablePath
+        });
 
         // Add Upstream Table
+        CommandOutput commandOutput = null;
         try {
-            DbUpstreamCommands addUpstreamCmd = (DbUpstreamCommands) cmdFactory.getCLI(addUpstreamTableInput);
-            commandOutput = addUpstreamCmd.executeRealCommand();
+            DbUpstreamCommands cmd = (DbUpstreamCommands) cmdFactory.getCLI(input);
+            commandOutput = cmd.executeRealCommand();
+        } catch (Exception e) {
+            e.printStackTrace(); // TODO handle properly
+        }
+    }
+
+    public static void deleteTable(CLICommandFactory cmdFactory, String tablePath) {
+        ProcessedInput input = new ProcessedInput(new String[] {
+                "table", "delete",
+                "-path", tablePath
+        });
+
+        CommandOutput commandOutput = null;
+        try {
+            DbCommands cmd = (DbCommands) cmdFactory.getCLI(input);
+            commandOutput = cmd.executeRealCommand();
         } catch (Exception e) {
             SandboxAdminUtils.printErrors(commandOutput);
             e.printStackTrace(); // TODO handle properly
         }
     }
 
+    public static void resumeReplication(CLICommandFactory cmdFactory, String fromTablePath, String toTablePath) {
+        ProcessedInput input = new ProcessedInput(new String[] {
+                "table", "replica", "resume",
+                "-path", fromTablePath,
+                "-replica", toTablePath
+        });
+
+        CommandOutput commandOutput = null;
+        try {
+            DbReplicaCommands cmd = (DbReplicaCommands) cmdFactory.getCLI(input);
+            commandOutput = cmd.executeRealCommand();
+        } catch (Exception e) {
+            SandboxAdminUtils.printErrors(commandOutput);
+            e.printStackTrace(); // TODO handle properly
+        }
+    }
+
+    public static void deleteCF(CLICommandFactory cmdFactory, String tablePath, String cfName) {
+        ProcessedInput input = new ProcessedInput(new String[] {
+                "table", "cf", "delete",
+                "-path", tablePath,
+                "-cfname", cfName
+        });
+
+        CommandOutput commandOutput = null;
+        try {
+            DbCfCommands cmd = (DbCfCommands) cmdFactory.getCLI(input);
+            commandOutput = cmd.executeRealCommand();
+        } catch (Exception e) {
+            SandboxAdminUtils.printErrors(commandOutput);
+            e.printStackTrace(); // TODO handle properly
+        }
+    }
 
     public static void writeToDfsFile(MapRFileSystem fs, Path destinationPath, String content) {
         File temp = null;
@@ -125,10 +202,16 @@ public class SandboxAdminUtils {
             e.printStackTrace();
         }
 
-        try {
-            fs.copyFromLocalFile(true, true, new Path(temp.toURI()), destinationPath);
-        } catch (IOException e) {
-            e.printStackTrace();
+        if (temp != null) {
+            try {
+                fs.copyFromLocalFile(true, true, new Path(temp.toURI()), destinationPath);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        } else {
+            System.err.println("Could not create temp file");
+            System.exit(-1);
         }
+
     }
 }

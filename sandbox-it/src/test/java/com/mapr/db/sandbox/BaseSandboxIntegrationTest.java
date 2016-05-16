@@ -104,8 +104,8 @@ public abstract class BaseSandboxIntegrationTest {
         }
 
         // delete original table and cleanup test directory
-        sandboxAdmin.deleteTable(originalTablePath);
-        sandboxAdmin.deleteTable(mimicTablePath);
+        SandboxAdminUtils.deleteTable(cmdFactory, originalTablePath);
+        SandboxAdminUtils.deleteTable(cmdFactory, mimicTablePath);
 
         // recursive = true  because proxy tables might still exist
         // TODO we might need to address this
@@ -140,6 +140,6 @@ public abstract class BaseSandboxIntegrationTest {
     }
 
     protected void pushSandbox() throws IOException, SandboxException {
-        sandboxAdmin.pushSandbox(sandboxTablePath, true);
+        sandboxAdmin.pushSandbox(sandboxTablePath, true, false, false);
     }
 }

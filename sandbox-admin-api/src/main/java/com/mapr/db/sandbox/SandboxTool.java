@@ -15,6 +15,10 @@ public class SandboxTool {
     static final String OP_INFO = "info";
     static final String OP_DELETE = "delete";
 
+    static final boolean DEFAULT_WAIT_ON_PUSH = false;
+    static final boolean DEFAULT_SNAPSHOT_BEFORE_PUSH = false;
+    static final boolean DEFAULT_FORCE_PUSH = false;
+
     static Options createOpts, pushOpts, infoOpts, deleteOpts;
     static Map<String, Options> cmdOperationOpts = Maps.newHashMap();
     static {
@@ -46,8 +50,24 @@ public class SandboxTool {
                 .isRequired()
                 .create("path"));
         pushOpts.addOption(OptionBuilder
-                .withDescription("hang until all records are pushed to the original table")
+                .hasArg() // forces the true or false
+                .withDescription(
+                        String.format("if true, hang until all records are pushed to the original table (default: %s)", DEFAULT_WAIT_ON_PUSH)
+                )
                 .create("wait"));
+        pushOpts.addOption(OptionBuilder
+                .hasArg() // forces the true or false
+                .withDescription(
+                        String.format("if true, it takes a snapshot to original table's volume before pushing sandbox (default: %s)", DEFAULT_SNAPSHOT_BEFORE_PUSH)
+                )
+                .create("snapshot"));
+        pushOpts.addOption(OptionBuilder
+                .hasArg() // forces the true or false
+                // TODO improve the description : >
+                .withDescription(
+                        String.format("if true, forces all sandbox cell version to overwrite any record that was changed since sandbox creation (default: %s)", DEFAULT_FORCE_PUSH)
+                )
+                .create("force"));
         cmdOperationOpts.put(OP_PUSH, pushOpts);
 
         deleteOpts = new Options();
@@ -89,13 +109,30 @@ public class SandboxTool {
         if (operation.equals(OP_CREATE)) {
             sandboxAdmin.createSandbox(cmd.getOptionValue("path"),
                     cmd.getOptionValue("original"));
-        } else if (operation.equals(OP_PUSH)) {
-            sandboxAdmin.pushSandbox(cmd.getOptionValue("path"),
-                    cmd.hasOption("wait"));
-        } else if (operation.equals(OP_INFO)) {
-            sandboxAdmin.info(cmd.getOptionValue("original"));
-        } else if (operation.equals(OP_DELETE)) {
-            sandboxAdmin.deleteSandbox(cmd.getOptionValue("path"));
+        } else {
+            if (operation.equals(OP_PUSH)) {
+                boolean wait = DEFAULT_WAIT_ON_PUSH;
+                boolean snapshot = DEFAULT_SNAPSHOT_BEFORE_PUSH;
+                boolean forcePush = DEFAULT_FORCE_PUSH;
+
+                if (cmd.hasOption("wait")) {
+                    wait = Boolean.valueOf(cmd.getOptionValue("wait"));
+                }
+
+                if (cmd.hasOption("snapshot")) {
+                    snapshot = Boolean.valueOf(cmd.getOptionValue("snapshot"));
+                }
+
+                if (cmd.hasOption("force")) {
+                    forcePush = Boolean.valueOf(cmd.getOptionValue("force"));
+                }
+
+                sandboxAdmin.pushSandbox(cmd.getOptionValue("path"), wait, snapshot, forcePush);
+            } else if (operation.equals(OP_INFO)) {
+                sandboxAdmin.info(cmd.getOptionValue("original"));
+            } else if (operation.equals(OP_DELETE)) {
+                sandboxAdmin.deleteSandbox(cmd.getOptionValue("path"));
+            }
         }
     }
 

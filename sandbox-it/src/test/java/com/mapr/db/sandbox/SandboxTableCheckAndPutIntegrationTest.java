@@ -1,11 +1,9 @@
 package com.mapr.db.sandbox;
 
-import org.apache.hadoop.hbase.DoNotRetryIOException;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -26,9 +24,8 @@ public class SandboxTableCheckAndPutIntegrationTest extends BaseSandboxIntegrati
 
     Scan scan = new Scan();
 
-    @Ignore
     @Test
-    public void testCheckAndPutOnEmptyOriginal() throws IOException {
+    public void testCheckAndPutOnEmptyOriginal() throws IOException, SandboxException {
         // CASE original empty, sandbox empty
         // verify there's nothing in the tables
         ResultScanner origResults, sandResults, mimicResults;
@@ -39,8 +36,6 @@ public class SandboxTableCheckAndPutIntegrationTest extends BaseSandboxIntegrati
         assertEquals("original table should have no rows", 0L, countRows(origResults));
         assertEquals("sandbox table should have no rows", 0L, countRows(sandResults));
         assertEquals("mimic table should have no rows", 0L, countRows(mimicResults));
-
-
 
         // CASE: insert when cell is empty
         assertFalse("should fail on non-existent cell",
@@ -79,9 +74,9 @@ public class SandboxTableCheckAndPutIntegrationTest extends BaseSandboxIntegrati
                 hTableMimic.checkAndPut(newRowId, CF1, COL1, "v2".getBytes(), put1));
 
         assertEquals("filled value should be there", "v2", getCellValue(hTableSandbox, newRowId, CF1, COL1));
-        assertEquals("no value should be added", "otherString", getCellValue(hTableSandbox, newRowId, CF1, COL2));
+        assertEquals("value should be added", "otherString", getCellValue(hTableSandbox, newRowId, CF1, COL2));
         assertEquals("filled value should be there", "v2", getCellValue(hTableMimic, newRowId, CF1, COL1));
-        assertEquals("no value should be added", "otherString", getCellValue(hTableMimic, newRowId, CF1, COL2));
+        assertEquals("value should be added", "otherString", getCellValue(hTableMimic, newRowId, CF1, COL2));
 
         // CASE: insert when cell is filled in sandbox, then deleted
         setCellValue(hTableSandbox, newRowId, CF1, COL2, "v3");
@@ -89,22 +84,23 @@ public class SandboxTableCheckAndPutIntegrationTest extends BaseSandboxIntegrati
         delCell(hTableSandbox, newRowId, CF1, COL1);
         delCell(hTableMimic, newRowId, CF1, COL1);
 
-        // TODO transform the below assertions in separate verify function and call before and after push
-        assertFalse("should not work on deleted cell",
-                hTableSandbox.checkAndPut(newRowId, CF1, COL1, "v2".getBytes(), put1));
-        assertFalse("should not work on deleted cell",
-                hTableMimic.checkAndPut(newRowId, CF1, COL1, "v2".getBytes(), put1));
+        verifyFinalStateCheckAndPutOnEmptyOriginal(hTableSandbox);
+        verifyFinalStateCheckAndPutOnEmptyOriginal(hTableMimic);
 
-        assertEquals("no value should be returned for deleted cell", null, getCellValue(hTableSandbox, newRowId, CF1, COL1));
-        assertEquals("value should remain untouched", "v3", getCellValue(hTableSandbox, newRowId, CF1, COL2));
+        pushSandbox();
 
-        // TODO mimic will have the deleted value if the execution goes too fast – wtf is wrong with deletes?
-        assertEquals("no value should be returned for deleted cell", null, getCellValue(hTableMimic, newRowId, CF1, COL1));
-        assertEquals("value should remain untouched", "v3", getCellValue(hTableMimic, newRowId, CF1, COL2));
+        verifyFinalStateCheckAndPutOnEmptyOriginal(hTableOriginal);
+    }
+
+    private void verifyFinalStateCheckAndPutOnEmptyOriginal(HTable hTable) throws IOException {
+        assertFalse("should not work on deleted cell",
+                hTable.checkAndPut(newRowId, CF1, COL1, "v2".getBytes(), put1));
+
+        assertEquals("no value should be returned for deleted cell", null, getCellValue(hTable, newRowId, CF1, COL1));
+        assertEquals("value should remain untouched", "v3", getCellValue(hTable, newRowId, CF1, COL2));
     }
 
 
-    @Ignore
     @Test
     public void testCheckAndPutOnFilledOriginal() throws IOException, SandboxException {
         // CASE original filled, sandbox empty
@@ -150,12 +146,12 @@ public class SandboxTableCheckAndPutIntegrationTest extends BaseSandboxIntegrati
                 hTableMimic.checkAndPut(existingRowId, CF1, COL1, "1".getBytes(), put2));
 
         assertEquals("filled value should be there", "1", getCellValue(hTableSandbox, existingRowId, CF1, COL1));
-        assertEquals("no value should be added", "otherString", getCellValue(hTableSandbox, existingRowId, CF1, COL2));
+        assertEquals("value should be added", "otherString", getCellValue(hTableSandbox, existingRowId, CF1, COL2));
         assertEquals("filled value should be there", "1", getCellValue(hTableMimic, existingRowId, CF1, COL1));
-        assertEquals("no value should be added", "otherString", getCellValue(hTableMimic, existingRowId, CF1, COL2));
+        assertEquals("value should be added", "otherString", getCellValue(hTableMimic, existingRowId, CF1, COL2));
 
         // CASE original filled, sandbox filled (by previous checkAndPut)
-        // non matching case
+        // non matching value
         assertFalse("should work on non matching value cell",
                 hTableSandbox.checkAndPut(existingRowId, CF1, COL2, "1".getBytes(), put2));
         assertFalse("should work on non matching value cell",
@@ -167,27 +163,20 @@ public class SandboxTableCheckAndPutIntegrationTest extends BaseSandboxIntegrati
         delCell(hTableSandbox, existingRowId, CF1, COL1);
         delCell(hTableMimic, existingRowId, CF1, COL1);
 
-        // TODO transform the below assertions in separate verify function and call before and after push
         verifyFinalStateCheckAndPutOnFilledOriginal(hTableSandbox);
         verifyFinalStateCheckAndPutOnFilledOriginal(hTableMimic);
-//
-//        pushSandbox();
-//
-//        verifyFinalStateCheckAndPutOnFilledOriginal(hTableOriginal);
+
+        pushSandbox();
+
+        verifyFinalStateCheckAndPutOnFilledOriginal(hTableOriginal);
     }
 
     private void verifyFinalStateCheckAndPutOnFilledOriginal(HTable hTable) throws IOException {
-        boolean exceptThrown = false;
-        try {
-            hTable.checkAndPut(existingRowId, CF1, COL1, "1".getBytes(), put2);
-        } catch (DoNotRetryIOException ex) {
-            exceptThrown = true;
-        }
-
-        assertTrue("should not work on deleted cell", exceptThrown);
-
+        assertFalse("should not work on deleted cell",
+                hTable.checkAndPut(existingRowId, CF1, COL1, "1".getBytes(), put2));
         assertEquals("no value should be returned for deleted cell", null, getCellValue(hTable, existingRowId, CF1, COL1));
         assertEquals("value should remain untouched", "v3", getCellValue(hTable, existingRowId, CF1, COL2));
     }
 
+    // TODO add test where original is filled, and matching cell is updated in original before push (should mantain) the new value
 }

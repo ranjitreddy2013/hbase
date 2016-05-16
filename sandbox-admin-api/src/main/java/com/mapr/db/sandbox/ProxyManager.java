@@ -61,7 +61,8 @@ public class ProxyManager {
             proxyInfo.proxyFid = SandboxTableUtils.getFidFromPath(fs, proxyInfo.proxyTablePath);
 
             // setup replication to original
-            SandboxAdminUtils.setupReplication(cmdFactory, proxyInfo.proxyTablePath, proxyInfo.originalTablePath, false);
+            SandboxAdminUtils.addTableReplica(cmdFactory, proxyInfo.proxyTablePath, proxyInfo.originalTablePath, false);
+            SandboxAdminUtils.addUpstreamTable(cmdFactory, proxyInfo.originalTablePath, proxyInfo.proxyTablePath);
 
             return proxyInfo;
         } else {

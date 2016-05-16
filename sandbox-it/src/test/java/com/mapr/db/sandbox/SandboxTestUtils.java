@@ -68,10 +68,10 @@ public class SandboxTestUtils {
         }
     }
 
-    public static String getCellValue(HTable hTable, byte[] rowId, byte[] columnFamily, byte[] columnQualifier) throws IOException {
+    public static String getCellValue(HTable hTable, byte[] rowId, byte[] family, byte[] qualifier) throws IOException {
         Get get = new Get(rowId);
-        get.addColumn(columnFamily, columnFamily);
-        return Bytes.toString(hTable.get(get).getValue(columnFamily, columnQualifier));
+        get.addColumn(family, qualifier);
+        return Bytes.toString(hTable.get(get).getValue(family, qualifier));
     }
 
     public static void setCellValue(HTable hTable, byte[] rowId, byte[] columnFamily, byte[] columnQualifier, String value) throws InterruptedIOException, RetriesExhaustedWithDetailsException {
@@ -81,16 +81,16 @@ public class SandboxTestUtils {
         hTable.flushCommits();
     }
 
-    public static void delCell(HTable hTable, byte[] rowId, byte[] columnFamily, byte[] columnQualifier) throws IOException {
+    public static void delCell(HTable hTable, byte[] rowId, byte[] family, byte[] qualifier) throws IOException {
         Delete delete = new Delete(rowId);
-        delete.deleteColumn(columnFamily, columnQualifier);
+        delete.deleteColumns(family, qualifier);
         hTable.delete(delete);
         hTable.flushCommits();
     }
 
-    public static void delFamily(HTable hTable, byte[] rowId, byte[] columnFamily) throws IOException {
+    public static void delFamily(HTable hTable, byte[] rowId, byte[] family) throws IOException {
         Delete delete = new Delete(rowId);
-        delete.deleteFamily(columnFamily);
+        delete.deleteFamily(family);
         hTable.delete(delete);
         hTable.flushCommits();
     }
@@ -99,5 +99,18 @@ public class SandboxTestUtils {
         Delete delete = new Delete(rowId);
         hTable.delete(delete);
         hTable.flushCommits();
+    }
+
+    public static Result incrCell(HTable hTable, byte[] row, byte[] family, byte[] qualifier, long incValue) throws IOException {
+        Increment increment = new Increment(row);
+        increment.addColumn(family, qualifier, incValue);
+        Result result = hTable.increment(increment);
+        return result;
+    }
+
+    public static long getCellLongValue(HTable hTable, byte[] rowId, byte[] family, byte[] qualifier) throws IOException {
+        Get get = new Get(rowId);
+        get.addColumn(family, qualifier);
+        return Bytes.toLong(hTable.get(get).getValue(family, qualifier));
     }
 }

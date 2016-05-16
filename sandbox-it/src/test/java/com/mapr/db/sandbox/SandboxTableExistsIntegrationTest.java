@@ -3,7 +3,6 @@ package com.mapr.db.sandbox;
 import com.google.common.collect.Lists;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -98,7 +97,6 @@ public class SandboxTableExistsIntegrationTest extends BaseSandboxIntegrationTes
                 hTable.exists(get2));
     }
 
-    @Ignore // TODO failing due to error in single row deletion after push
     @Test
     public void testExistsOnFilledOriginal() throws IOException, SandboxException {
         // CASE original filled, sandbox empty

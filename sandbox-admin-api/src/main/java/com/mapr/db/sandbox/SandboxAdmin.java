@@ -69,57 +69,36 @@ public class SandboxAdmin {
         }
 
         // wire proxy
-        SandboxAdminUtils.setupReplication(cmdFactory, sandboxTablePath, selectedProxy.proxyTablePath, true);
+        // wire proxy
+        SandboxAdminUtils.addTableReplica(cmdFactory, sandboxTablePath, selectedProxy.proxyTablePath, true);
+        SandboxAdminUtils.addUpstreamTable(cmdFactory, selectedProxy.proxyTablePath, sandboxTablePath);
 
         return selectedProxy;
     }
 
     /**
-     *
-     * @param sandboxTablePath
+     *  @param sandboxTablePath
      * @param wait
+     * @param snapshot
+     * @param forcePush
      */
-    public void pushSandbox(String sandboxTablePath, boolean wait) throws IOException, SandboxException {
+    public void pushSandbox(String sandboxTablePath, boolean wait, boolean snapshot, boolean forcePush) throws IOException, SandboxException {
         EnumMap<SandboxTable.InfoType, String> info = SandboxTableUtils.readSandboxInfo(fs, sandboxTablePath);
 
         String proxyFid = info.get(SandboxTable.InfoType.PROXY_FID);
         Path proxyPath = SandboxTableUtils.pathFromFid(fs, proxyFid);
         String proxyTablePath = proxyPath.toUri().toString();
 
-
         // TODO add flag 'force' to make sure all the modifications have a recent timestamp? (pending on testing scenarios)
 
-        CommandOutput commandOutput = null;
 
         // Delete metadata CF
-        ProcessedInput delMetadataCFInput = new ProcessedInput(new String[] {
-                "table", "cf", "delete",
-                "-path", sandboxTablePath,
-                "-cfname", SandboxTable.DEFAULT_META_CF_NAME
-        });
+        SandboxAdminUtils.deleteCF(cmdFactory, sandboxTablePath, SandboxTable.DEFAULT_META_CF_NAME);
+        SandboxAdminUtils.deleteCF(cmdFactory, sandboxTablePath, SandboxTable.DEFAULT_DIRTY_CF_NAME);
 
-        try {
-            DbCfCommands delMetadataCFCmd = (DbCfCommands) cmdFactory.getCLI(delMetadataCFInput);
-            commandOutput = delMetadataCFCmd.executeRealCommand();
-        } catch (Exception e) {
-            SandboxAdminUtils.printErrors(commandOutput);
-            e.printStackTrace(); // TODO handle properly
-        }
 
-        // Delete metadata CF
-        ProcessedInput resumeReplicaInput = new ProcessedInput(new String[] {
-                "table", "replica", "resume",
-                "-path", sandboxTablePath,
-                "-replica", proxyTablePath
-        });
-
-        try {
-            DbReplicaCommands resumeReplicaCmd = (DbReplicaCommands) cmdFactory.getCLI(resumeReplicaInput);
-            commandOutput = resumeReplicaCmd.executeRealCommand();
-        } catch (Exception e) {
-            SandboxAdminUtils.printErrors(commandOutput);
-            e.printStackTrace(); // TODO handle properly
-        }
+        // Resume repl
+        SandboxAdminUtils.resumeReplication(cmdFactory, sandboxTablePath, proxyTablePath);
 
 
         // if wait is set, the application will periodically monitor the state of the replication. this method
@@ -200,29 +179,14 @@ public class SandboxAdmin {
         String proxyFid = info.get(SandboxTable.InfoType.PROXY_FID);
         Path proxyTablePath = SandboxTableUtils.pathFromFid(fs, proxyFid);
 
-        CommandOutput commandOutput = null;
-
-        // Remove upstream to proxy
-        ProcessedInput removeUpstreamInput = new ProcessedInput(new String[] {
-                "table", "upstream", "remove",
-                "-path", proxyTablePath.toUri().toString(),
-                "-upstream", sandboxTablePath
-        });
-
-        try {
-            DbUpstreamCommands removeUpstreamCmd = (DbUpstreamCommands) cmdFactory.getCLI(removeUpstreamInput);
-            commandOutput = removeUpstreamCmd.executeRealCommand();
-        } catch (Exception e) {
-            SandboxAdminUtils.printErrors(commandOutput);
-            e.printStackTrace(); // TODO handle properly
-        }
+        SandboxAdminUtils.removeUpstreamTable(cmdFactory, proxyTablePath.toUri().toString(), sandboxTablePath);
 
         // delete metadata file FIRST
         Path metadataFilePath = SandboxTableUtils.metafilePath(fs, sandboxTablePath);
         fs.delete(metadataFilePath, false);
 
         // deletes sandbox
-        deleteTable(sandboxTablePath);
+        SandboxAdminUtils.deleteTable(cmdFactory, sandboxTablePath);
 
         // TODO do something with proxy?!
 //        String originalTablePath = info.get(SandboxTable.InfoType.ORIGINAL_FID);
@@ -292,22 +256,9 @@ public class SandboxAdmin {
 
         // create metadata CF
         SandboxAdminUtils.createTableCF(cmdFactory, sandboxTablePath, SandboxTable.DEFAULT_META_CF_NAME);
-    }
 
-    public void deleteTable(String tablePath) {
-        ProcessedInput tableDeleteInput = new ProcessedInput(new String[] {
-                "table", "delete",
-                "-path", tablePath
-        });
-
-        // Create sandbox table
-        CommandOutput commandOutput;
-        try {
-            DbCommands tableDeleteCmd = (DbCommands) cmdFactory.getCLI(tableDeleteInput);
-            commandOutput = tableDeleteCmd.executeRealCommand();
-        } catch (Exception e) {
-            e.printStackTrace(); // TODO handle properly
-        }
+        // create dirty CF
+        SandboxAdminUtils.createTableCF(cmdFactory, sandboxTablePath, SandboxTable.DEFAULT_DIRTY_CF_NAME);
     }
 
     static void setupCommands() {

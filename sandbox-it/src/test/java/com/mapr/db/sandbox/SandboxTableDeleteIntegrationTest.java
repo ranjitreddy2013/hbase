@@ -217,7 +217,6 @@ public class SandboxTableDeleteIntegrationTest extends BaseSandboxIntegrationTes
     }
 
 
-    //    @Ignore // TODO failing due to error in single row deletion after push
     @Test
     public void testDeleteOnFilledOriginal() throws IOException, SandboxException {
         // CASE: original filled, sandbox empty
@@ -319,7 +318,6 @@ public class SandboxTableDeleteIntegrationTest extends BaseSandboxIntegrationTes
         verifyFinalStateDeleteOnFilledOriginal(hTableMimic);
 
         pushSandbox();
-        // TODO after push state doesn't converge!!!
         verifyFinalStateDeleteOnFilledOriginal(hTableOriginal);
     }
 

@@ -451,24 +451,58 @@ public class SandboxHTable {
         get.addColumn(family, qualifier);
         Result shadowResult = sandboxTable.table.get(enrichGet(get));
 
-        if (!SandboxTableUtils.hasValueForColumn(shadowResult, family, qualifier)) {
+        // case the value exists in original but not on sandbox (nor was deleted in sandbox)
+        if (!SandboxTableUtils.hasDeletionMarkForColumn(shadowResult, family, qualifier) &&
+                !SandboxTableUtils.hasValueForColumn(shadowResult, family, qualifier)) {
             Result originalResult = sandboxTable.originalTable.get(get);
 
             // fill the sandbox with original's value first
             if (originalResult.containsColumn(family, qualifier)) {
+                // TODO this put might polute the sandbox state and break stuff, so please adjust timestamp
                 Put fillPut = new Put(row);
                 fillPut.add(family, qualifier, originalResult.getValue(family, qualifier));
-                put(sandboxTable, fillPut);
+                sandboxTable.table.put(fillPut);
                 sandboxTable.table.flushCommits();
             }
         }
 
-        return sandboxTable.table.checkAndPut(row, family, qualifier, value, put);
+        boolean opSuccess = sandboxTable.table.checkAndPut(row, family, qualifier, value, put);
+
+        if (opSuccess) {
+            Delete delete = removeDeletionMarkForPut(put);
+            sandboxTable.table.delete(delete);
+        }
+
+        return opSuccess;
     }
 
-    public static boolean checkAndDelete(SandboxTable sandboxTable, byte[] row, byte[] family, byte[] qualifier, byte[] value, Delete delete) {
-        // TODO
-        return false;
+    public static boolean checkAndDelete(SandboxTable sandboxTable, byte[] row, byte[] family, byte[] qualifier, byte[] value, Delete delete) throws IOException {
+        final Get get = new Get(row);
+        get.addColumn(family, qualifier);
+        Result shadowResult = sandboxTable.table.get(enrichGet(get));
+
+        // case the value exists in original but not on sandbox (nor was deleted in sandbox)
+        if (!SandboxTableUtils.hasDeletionMarkForColumn(shadowResult, family, qualifier) &&
+                !SandboxTableUtils.hasValueForColumn(shadowResult, family, qualifier)) {
+            Result originalResult = sandboxTable.originalTable.get(get);
+
+            // fill the sandbox with original's value first
+            if (originalResult.containsColumn(family, qualifier)) {
+                // TODO this put might polute the sandbox state and break stuff, so please adjust timestamp
+                Put fillPut = new Put(row);
+                fillPut.add(family, qualifier, originalResult.getValue(family, qualifier));
+                sandboxTable.table.put(fillPut);
+                sandboxTable.table.flushCommits();
+            }
+        }
+
+        boolean opSuccess = sandboxTable.table.checkAndDelete(row, family, qualifier, value, delete);
+
+        if (opSuccess) {
+            markAsDeleted(sandboxTable, delete);
+        }
+
+        return opSuccess;
     }
 
     public static boolean checkAndMutate(SandboxTable sandboxTable, byte[] row, byte[] family, byte[] qualifier, CompareFilter.CompareOp compareOp, byte[] value, RowMutations rm) {

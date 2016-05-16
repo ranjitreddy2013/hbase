@@ -10,6 +10,7 @@ import static com.mapr.db.sandbox.SandboxTestUtils.setCellValue;
 import static org.junit.Assert.assertEquals;
 
 public class SandboxTablePutIntegrationTest extends BaseSandboxIntegrationTest {
+
   @Test
   public void testPutOnFilledOriginal() throws IOException, SandboxException {
     // CASE original filled, sandbox empty

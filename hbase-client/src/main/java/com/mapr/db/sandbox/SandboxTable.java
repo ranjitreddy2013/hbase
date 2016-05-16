@@ -6,7 +6,8 @@ import org.apache.hadoop.hbase.client.mapr.AbstractHTable;
  * Sandbox table definition
  */
 final public class SandboxTable {
-    public static final String DEFAULT_META_CF_NAME = "_shadow";
+    public static final String DEFAULT_META_CF_NAME = "_sandmeta";
+    public static final String DEFAULT_DIRTY_CF_NAME = "_sanddirty";
     public static final byte[] DEFAULT_META_CF = DEFAULT_META_CF_NAME.getBytes();
     public static final String METADATA_FILENAME_FORMAT = ".meta_%s"; // shadow table fid
 
