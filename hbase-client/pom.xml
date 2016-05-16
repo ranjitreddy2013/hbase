@@ -339,9 +339,53 @@
             <artifactId>maven-surefire-plugin</artifactId>
             <configuration>
               <includes>
-                <include>com/mapr/db/shadow/**.java</include>
+                <include>com/mapr/db/sandbox/**.java</include>
                 <include>**/**SandboxTest.java</include>
               </includes>
+            </configuration>
+          </plugin>
+
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>rpm-maven-plugin</artifactId>
+            <version>2.1.4</version>
+            <executions>
+              <execution>
+                <id>attached-rpm</id>
+                <goals>
+                  <goal>attached-rpm</goal>
+                </goals>
+              </execution>
+            </executions>
+            <configuration>
+              <name>hbase-sandbox-client</name>
+              <group>MapR-DB/sandbox</group>
+              <packager>MapR</packager>
+              <mappings>
+                <mapping>
+                  <directory>/opt/mapr/sandbox/lib/client</directory>
+                  <filemode>750</filemode>
+                  <username>mapr</username>
+                  <groupname>mapr</groupname>
+                  <sources>
+                    <source>
+                      <location>target/${project.artifactId}-${project.version}.jar</location>
+                    </source>
+                  </sources>
+                </mapping>
+              </mappings>
+              <postremoveScriptlet>
+                <scriptFile>src/rpm/preremove.sh</scriptFile>
+                <fileEncoding>utf-8</fileEncoding>
+              </postremoveScriptlet>
+              <postinstallScriptlet>
+                <scriptFile>src/rpm/postinstall.sh</scriptFile>
+                <fileEncoding>utf-8</fileEncoding>
+              </postinstallScriptlet>
+              <requires>
+                <require>mapr-hbase = 0.98.12.201507081709-1</require>
+                <require>mapr-patch >= 5.0.0.32987.GA-35615</require>
+              </requires>
             </configuration>
           </plugin>
         </plugins>

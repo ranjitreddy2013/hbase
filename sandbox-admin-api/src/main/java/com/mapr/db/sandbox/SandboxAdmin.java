@@ -33,6 +33,11 @@ public class SandboxAdmin {
     static final String LOCK_ACQ_FAIL_MSG = "Sandbox Push Lock could not be acquired";
     public static final String SANDBOX_PUSH_SNAPSHOT_FORMAT = "sandbox_push_%s";
 
+    public static final String CONF_DRILL_JDBC_CONN_STR = "sandbox.drill.jdbc_conn_str";
+    public static final String CONF_WAIT_POLL_INTERVAL = "sandbox.wait_poll_interval";
+    public static final String CONF_PUSH_EXTRA_WAIT_INTERVAL = "sandbox.push_extra_wait_interval";
+
+
     protected static CompositeConfiguration toolConfig = new CompositeConfiguration();
 
     static {
@@ -45,12 +50,13 @@ public class SandboxAdmin {
         }
 
         // TODO play with these settings in configuration
-        REPLICA_WAIT_POLL_INTERVAL = toolConfig.getLong("sandbox.wait_poll_interval", 3000L);
-        REPLICA_TO_PROXY_WAIT_TIME = toolConfig.getLong("sandbox.push_extra_wait_interval", 6000L);
+        REPLICA_WAIT_POLL_INTERVAL = toolConfig.getLong(CONF_WAIT_POLL_INTERVAL, 3000L);
+        REPLICA_TO_PROXY_WAIT_TIME = toolConfig.getLong(CONF_PUSH_EXTRA_WAIT_INTERVAL, 6000L);
     }
 
     MapRFileSystem fs;
     MapRRestClient restClient;
+    DrillViewConverter drillViewConverter;
     SandboxTablesListManager globalSandboxListManager;
 
     public SandboxAdmin(Configuration configuration) throws SandboxException {
@@ -308,4 +314,11 @@ public class SandboxAdmin {
         return originalSandboxListManager.getListFromFile();
     }
 
+    public void convertDrill() throws SandboxException {
+        if (drillViewConverter == null) {
+            drillViewConverter = new DrillViewConverter(toolConfig.getString(CONF_DRILL_JDBC_CONN_STR, ""));
+        }
+
+        drillViewConverter.X();
+    }
 }

@@ -17,6 +17,9 @@ public class SandboxTool {
     static final String OP_PUSH = "push";
     static final String OP_DELETE = "delete";
     static final String OP_LIST = "list";
+    static final String OP_DRILL = "drill";
+    static final String OP_CLASSPATH = "classpath";
+
 
     static final boolean DEFAULT_SNAPSHOT_BEFORE_PUSH = false;
     static final boolean DEFAULT_FORCE_PUSH = false;
@@ -27,12 +30,14 @@ public class SandboxTool {
         final Option usernameOpt = OptionBuilder.withArgName("username")
                 .hasArg()
                 .withDescription("username (default: current username)")
-                .create("user");
+                .withLongOpt("user")
+                .create("u");
 
         final Option passwordOpt = OptionBuilder.withArgName("password")
                 .hasArg()
                 .withDescription("user password (default: value from hidden prompt)")
-                .create("pw");
+                .withLongOpt("password")
+                .create("p");
 
         createOpts = new Options();
         createOpts.addOption(usernameOpt);
@@ -64,7 +69,7 @@ public class SandboxTool {
                 .withDescription("sandbox table path to push")
                 .isRequired()
                 .create("path"));
-        pushOpts.addOption(OptionBuilder
+        pushOpts.addOption(OptionBuilder.withArgName("<true|false>")
                 .hasArg() // forces the true or false
                 .withDescription(
                         String.format("if true, it takes a snapshot to original table's volume before pushing sandbox (default: %s)", DEFAULT_SNAPSHOT_BEFORE_PUSH)
@@ -88,6 +93,8 @@ public class SandboxTool {
                 .isRequired()
                 .create("path"));
         cmdOperationOpts.put(OP_DELETE, deleteOpts);
+//        cmdOperationOpts.put(OP_DRILL, new Options());
+        cmdOperationOpts.put(OP_CLASSPATH, new Options());
     }
 
     public static void main(String[] args) throws IOException {
@@ -117,8 +124,8 @@ public class SandboxTool {
         try {
             SandboxAdmin sandboxAdmin;
             if (requiresPassword(operation)) {
-                final String username = cmd.hasOption("user") ? cmd.getOptionValue("user") : UserGroupInformation.getCurrentUser().getUserName();
-                final String password = cmd.hasOption("pw") ? cmd.getOptionValue("pw") : promptPassword();
+            	final String username = cmd.hasOption("u") ? cmd.getOptionValue("u") : UserGroupInformation.getCurrentUser().getUserName();                
+            	final String password = cmd.hasOption("p") ? cmd.getOptionValue("p") : promptPassword();
                 sandboxAdmin = new SandboxAdmin(new Configuration(), username, password);
             } else {
                 sandboxAdmin = new SandboxAdmin(new Configuration(), null);
@@ -154,6 +161,11 @@ public class SandboxTool {
                     System.out.println(sb.toString());
                 } else if (operation.equals(OP_DELETE)) {
                     sandboxAdmin.deleteSandbox(cmd.getOptionValue("path"));
+                } else if (operation.equals(OP_DRILL)) {
+                    // TODO change this to add some params
+                    sandboxAdmin.convertDrill();
+                } else if (operation.equals(OP_CLASSPATH)) {
+                    System.out.println(System.getProperty("java.class.path"));
                 }
             }
         } catch (SandboxException e) {

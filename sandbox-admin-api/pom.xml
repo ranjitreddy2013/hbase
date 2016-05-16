@@ -81,6 +81,14 @@
       <artifactId>commons-configuration</artifactId>
       <version>1.10</version>
     </dependency>
+
+    <dependency>
+      <groupId>org.apache.drill.exec</groupId>
+      <artifactId>drill-jdbc</artifactId>
+      <version>${drill.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
   </dependencies>
 
   <build>
@@ -167,6 +175,7 @@
         <activeByDefault>true</activeByDefault>
       </activation>
       <properties>
+        <drill.version>1.4.0</drill.version>
         <install.prefix>/opt/mapr/sandbox</install.prefix>
         <mapr.lib.dir>/opt/mapr/lib</mapr.lib.dir>
         <surefire.skipFirstPart>false</surefire.skipFirstPart>

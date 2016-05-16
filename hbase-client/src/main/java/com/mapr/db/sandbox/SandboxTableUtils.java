@@ -244,9 +244,16 @@ public class SandboxTableUtils {
     }
 
     public static byte[] generateTransactionId(final byte[] rowId, final byte[] family, final byte[] qualifier) {
-        StringBuffer sb = new StringBuffer(Arrays.toString(rowId)).append("\n")
-                .append(Arrays.toString(family)).append("\n")
-                .append(Arrays.toString(qualifier));
+        StringBuffer sb = new StringBuffer(Arrays.toString(rowId)).append("\n");
+
+        if (family != null) {
+            sb.append(Arrays.toString(family)).append("\n");
+        }
+
+        if (qualifier != null) {
+            sb.append(Arrays.toString(qualifier));
+        }
+
         return hashF.hashString(sb.toString()).asBytes();
     }
 

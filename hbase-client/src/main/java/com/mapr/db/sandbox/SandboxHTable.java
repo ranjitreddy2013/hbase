@@ -3,6 +3,7 @@ package com.mapr.db.sandbox;
 import com.google.common.base.Function;
 import com.google.common.collect.FluentIterable;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -188,24 +189,37 @@ public class SandboxHTable {
             throw new UnsupportedOperationException(CANNOT_MUTATE_WHEN_DISABLED_MSG);
         }
 
-        List<Put> puts = Lists.newArrayList();
-//        FluentIterable.from(deletes).transform(new Function<Delete, Put>() {
-//            @Nullable
-//            @Override
-//            public Put apply(@Nullable Delete delete) {
-//                try {
-//                    return SandboxTableUtils.markForDeletionPut(sandboxTable, delete);
-//                } catch (IOException e) {
-//                    LOG.error(e.getMessage());
-//                    return null;
-//                }
-//            }
-//        }).toImmutableList();
-        // TODO this is broken
+        HashMap<ByteBuffer, RowMutations> mutationsByRow = Maps.newHashMap();
 
-        sandboxTable.table.delete(deletes);
-        sandboxTable.table.put(puts);
-        sandboxTable.table.flushCommits();
+        for (Delete delete : deletes) {
+            final byte[] rowId = delete.getRow();
+
+            if (!mutationsByRow.containsKey(ByteBuffer.wrap(rowId))) {
+                mutationsByRow.put(ByteBuffer.wrap(rowId), new RowMutations(rowId));
+            }
+
+            final RowMutations rowMutations = mutationsByRow.get(ByteBuffer.wrap(rowId));
+            _rowMutationsForDelete(rowMutations, sandboxTable, delete);
+        }
+
+
+        for (ByteBuffer byteBuffer : mutationsByRow.keySet()) {
+            byte[] rowId = byteBuffer.array();
+            final byte[] transactionId = SandboxTableUtils.generateTransactionId(rowId, null, null);;
+            try {
+                List<RowMutations> mutations = Lists.newArrayList(mutationsByRow.values());
+
+                AtomicSandboxOp.acquireLock(sandboxTable, rowId, transactionId);
+                try {
+                    sandboxTable.table.batch(mutations);
+                } catch (InterruptedException e) {
+                    throw new IOException(e.getMessage(), e);
+                }
+                sandboxTable.table.flushCommits();
+            } finally {
+                AtomicSandboxOp.releaseLock(sandboxTable, rowId, transactionId);
+            }
+        }
     }
 
     public static void delete(SandboxTable sandboxTable, Delete delete) throws IOException {
@@ -309,38 +323,46 @@ public class SandboxHTable {
             throw new UnsupportedOperationException(CANNOT_MUTATE_WHEN_DISABLED_MSG);
         }
 
-        List<Delete> deletes = FluentIterable.from(puts)
-                .transform(new Function<Put, Delete>() {
-                    @Nullable
-                    @Override
-                    public Delete apply(@Nullable Put put) {
-                        return removeDeletionMarkForPut(put);
-                    }
-                }).toImmutableList();
+        HashMap<ByteBuffer, RowMutations> mutationsByRow = Maps.newHashMap();
 
-        try {
-            sandboxTable.table.delete(deletes);
-            sandboxTable.table.put(puts);
-        } catch (IOException ex) {
-            LOG.error("Error on batch PUT", ex);
-            throw new InterruptedIOException(ex.getMessage());
+        for (Put put : puts) {
+            final byte[] rowId = put.getRow();
+
+            if (!mutationsByRow.containsKey(ByteBuffer.wrap(rowId))) {
+                mutationsByRow.put(ByteBuffer.wrap(rowId), new RowMutations(rowId));
+            }
+
+            final RowMutations rowMutations = mutationsByRow.get(ByteBuffer.wrap(rowId));
+            try {
+                _rowMutationsForPut(rowMutations, put);
+            } catch (IOException e) {
+                new InterruptedIOException(e.getMessage());
+            }
         }
-// TODO iterate
-//        final byte[] rowId = put.getRow();
-//        Delete delete = removeDeletionMarkForPut(put);
-//
-//        RowMutations rm = new RowMutations(rowId);
-//        rm.add(delete);
-//        rm.add(put);
-//
-//        try {
-//            // TODO retry?
-//            sandboxTable.table
-//                    .checkAndMutate(rowId,  SandboxTable.DEFAULT_DIRTY_CF, SandboxTable.DEFAULT_TID_COL,
-//                            CompareFilter.CompareOp.EQUAL, null, rm);
-//        } catch (IOException e) {
-//            throw new InterruptedIOException(e.toString());
-//        }
+
+        for (ByteBuffer byteBuffer : mutationsByRow.keySet()) {
+            byte[] rowId = byteBuffer.array();
+            final byte[] transactionId = SandboxTableUtils.generateTransactionId(rowId, null, null);;
+            try {
+                List<RowMutations> mutations = Lists.newArrayList(mutationsByRow.values());
+
+                try {
+                    AtomicSandboxOp.acquireLock(sandboxTable, rowId, transactionId);
+                    sandboxTable.table.batch(mutations);
+                    sandboxTable.table.flushCommits();
+                } catch (IOException e) {
+                    new InterruptedIOException(e.getMessage());
+                } catch (InterruptedException e) {
+                    new InterruptedIOException(e.getMessage());
+                }
+            } finally {
+                try {
+                    AtomicSandboxOp.releaseLock(sandboxTable, rowId, transactionId);
+                } catch (IOException e) {
+                    new InterruptedIOException(e.getMessage());
+                }
+            }
+        }
     }
 
     public static Result getRowOrBefore(SandboxTable sandboxTable, byte[] row, byte[] family) throws IOException {

@@ -18,6 +18,13 @@ CLI_JAVA_LIBRARY_PATH="${CLI_JAVA_LIBRARY_PATH}:${HADOOP_LIB_PATH}"
 
 HADOOP_CLASSPATH=$(hbase classpath)
 
+# Add drill to classpath if it's installed
+if [ -f "/opt/mapr/drill/drillversion" ];
+then
+   DRILL_VERSION=`cat /opt/mapr/drill/drillversion`;
+   CLI_CLASSPATH=${CLI_CLASSPATH}:/opt/mapr/drill/drill-${DRILL_VERSION}/jars/jdbc-driver/drill-jdbc-all-${DRILL_VERSION}.jar
+fi
+
 # TODO add logic to detect where's JAVA (through JAVA_HOME)
 #-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=9999
 java  \

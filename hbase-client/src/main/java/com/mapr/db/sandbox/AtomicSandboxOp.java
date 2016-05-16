@@ -39,19 +39,7 @@ public abstract class AtomicSandboxOp {
     public void run() throws IOException {
         final byte[] transactionId = getTransactionId();
 
-        // attempt to acquire lock
-        int tries = MAX_TRIES + 1;
-        try {
-            while (!acquireLock(sandboxTable, rowId, transactionId) && --tries > 0) {
-                Thread.sleep(1L);
-            }
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-
-        if (tries == 0) {
-            throw new IOException("Sandbox Row Lock – could not acquire lock");
-        }
+        attemptToAcquireLock(sandboxTable, rowId, transactionId);
 
         // empty unless columns are copied to dirty CF. format
         // Cell(family,qualifier) => dirtyColumnQualif to be used (for mutation or comparison on checkAndX op
@@ -155,6 +143,22 @@ public abstract class AtomicSandboxOp {
         }
     }
 
+    public static void attemptToAcquireLock(SandboxTable sandboxTable, byte[] rowId, byte[] transactionId) throws IOException {
+        // attempt to acquire lock
+        int tries = MAX_TRIES + 1;
+        try {
+            while (!acquireLock(sandboxTable, rowId, transactionId) && --tries > 0) {
+                Thread.sleep(1L);
+            }
+        } catch (InterruptedException e) {
+            throw new IOException("Sandbox Row Lock – could not acquire lock", e);
+        }
+
+        if (tries == 0) {
+            throw new IOException("Sandbox Row Lock – could not acquire lock");
+        }
+    }
+
     private static Get tableGetForCells(byte[] rowId, CellSet cellSet) {
         final Get get = new Get(rowId);
         for (Cell cell : cellSet) {
@@ -184,7 +188,7 @@ public abstract class AtomicSandboxOp {
         delete.deleteColumn(DEFAULT_META_CF, annotatedColumn);
     }
 
-    private static boolean acquireLock(SandboxTable sandboxTable, byte[] rowId, byte[] transactionId) throws IOException {
+    public static boolean acquireLock(SandboxTable sandboxTable, byte[] rowId, byte[] transactionId) throws IOException {
         Put put = new Put(rowId);
         put.add(SandboxTable.DEFAULT_DIRTY_CF, SandboxTable.DEFAULT_TID_COL, transactionId);
         try {
@@ -195,7 +199,7 @@ public abstract class AtomicSandboxOp {
         }
     }
 
-    private static boolean releaseLock(SandboxTable sandboxTable, byte[] rowId, byte[] transactionId) throws IOException {
+    public static boolean releaseLock(SandboxTable sandboxTable, byte[] rowId, byte[] transactionId) throws IOException {
         Delete deleteLock = new Delete(rowId);
         deleteLock.deleteColumns(SandboxTable.DEFAULT_DIRTY_CF, SandboxTable.DEFAULT_TID_COL);
         try {
