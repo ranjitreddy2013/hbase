@@ -208,7 +208,7 @@ public class SandboxHTable {
         final byte[] rowId = delete.getRow();
 
         try {
-            RowMutations rm = _rowMutationsForDelete(sandboxTable, delete);
+            RowMutations rm = _rowMutationsForDelete(new RowMutations(rowId), sandboxTable, delete);
             // TODO retry?
             boolean result = sandboxTable.table
                     .checkAndMutate(rowId,  SandboxTable.DEFAULT_DIRTY_CF, SandboxTable.DEFAULT_TID_COL,
@@ -219,12 +219,11 @@ public class SandboxHTable {
         }
     }
 
-    private static RowMutations _rowMutationsForDelete(SandboxTable sandboxTable, Delete delete) throws IOException {
+    private static RowMutations _rowMutationsForDelete(RowMutations rm, SandboxTable sandboxTable, Delete delete) throws IOException {
         byte[] rowId = delete.getRow();
         CellSet cellsToDelete = SandboxTableUtils.getCellsToDelete(sandboxTable, delete);
         Put put = SandboxTableUtils.markForDeletionPut(rowId, cellsToDelete);
 
-        RowMutations rm = new RowMutations(rowId);
         rm.add(restrictColumnsForDeletion(delete, cellsToDelete));
         rm.add(put);
         return rm;
@@ -240,7 +239,7 @@ public class SandboxHTable {
     public static void put(SandboxTable sandboxTable, Put put) throws InterruptedIOException {
         final byte[] rowId = put.getRow();
         try {
-            RowMutations rm = _rowMutationsForPut(put);
+            RowMutations rm = _rowMutationsForPut(new RowMutations(rowId), put);
 
             // TODO retry?
             sandboxTable.table
@@ -251,11 +250,8 @@ public class SandboxHTable {
         }
     }
 
-    private static RowMutations _rowMutationsForPut(Put put) throws IOException {
-        byte[] rowId = put.getRow();
+    private static RowMutations _rowMutationsForPut(RowMutations rm, Put put) throws IOException {
         Delete delete = removeDeletionMarkForPut(put);
-
-        RowMutations rm = new RowMutations(rowId);
         rm.add(delete);
         rm.add(put);
         return rm;

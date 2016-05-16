@@ -32,7 +32,6 @@ public class SandboxPushIntegrationTest extends BaseSandboxIntegrationTest {
             sandboxAdmin.createSandbox(newSandboxPath, originalTablePath);
         }
 
-
         // assert there's only one initial record in the original
         ResultScanner origResults, sandResults;
         origResults = hTableOriginal.getScanner(scan);
@@ -120,5 +119,6 @@ public class SandboxPushIntegrationTest extends BaseSandboxIntegrationTest {
         };
     }
 
-    // TODO add test for force push
+    // TODO add test where original is filled, and matching cell is updated in original before push (should mantain) the new value
+    // TODO depends on Force push
 }

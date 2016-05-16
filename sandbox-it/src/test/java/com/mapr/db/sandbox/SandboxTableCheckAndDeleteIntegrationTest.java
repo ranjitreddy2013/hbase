@@ -200,6 +200,4 @@ public class SandboxTableCheckAndDeleteIntegrationTest extends BaseSandboxIntegr
         assertEquals("matching cell was deleted", null, getCellValue(hTable, existingRowId, CF1, COL1));
         assertEquals("value should remain untouched", "deleteMe", getCellValue(hTable, existingRowId, CF2, COL2));
     }
-
-    // TODO add test where original is filled, and matching cell is updated in original before push (should mantain) the new value
 }

@@ -177,9 +177,6 @@ public class SandboxTableCheckAndPutIntegrationTest extends BaseSandboxIntegrati
         assertEquals("value should remain untouched", "v3", getCellValue(hTable, existingRowId, CF1, COL2));
     }
 
-    // TODO add test where original is filled, and matching cell is updated in original before push (should mantain) the new value
-    // TODO depends on Force push
-
     @Test
     public void testCheckAndPutOnNullColumns() throws IOException, SandboxException {
         testCheckAndPutOnNullColumnsForTable(hTableMimic);

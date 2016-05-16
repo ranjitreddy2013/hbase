@@ -108,6 +108,10 @@ public class SandboxTestUtils {
         hTable.flushCommits();
     }
 
+    public static long incrColValueCell(HTable hTable, byte[] row, byte[] family, byte[] qualifier, long incValue) throws IOException {
+        return hTable.incrementColumnValue(row, family, qualifier, incValue);
+    }
+
     public static Result incrCell(HTable hTable, byte[] row, byte[] family, byte[] qualifier, long incValue) throws IOException {
         Increment increment = new Increment(row);
         increment.addColumn(family, qualifier, incValue);
@@ -157,6 +161,6 @@ public class SandboxTestUtils {
         } finally {
             threadPool.shutdownNow();
         }
-        assertTrue(message + "failed with exception(s)" + exceptions, exceptions.isEmpty());
+        assertTrue(message + " failed with exception(s)" + exceptions, exceptions.isEmpty());
     }
 }
