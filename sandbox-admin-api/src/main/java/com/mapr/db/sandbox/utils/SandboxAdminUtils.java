@@ -1,15 +1,17 @@
 package com.mapr.db.sandbox.utils;
 
 import com.google.common.collect.Lists;
-import com.mapr.cli.DbCfCommands;
-import com.mapr.cli.DbCommands;
-import com.mapr.cli.DbReplicaCommands;
-import com.mapr.cli.DbUpstreamCommands;
+import com.mapr.cli.*;
 import com.mapr.cliframework.base.CLICommandFactory;
 import com.mapr.cliframework.base.CommandOutput;
 import com.mapr.cliframework.base.ProcessedInput;
+import com.mapr.db.sandbox.SandboxTable;
+import com.mapr.fs.ErrnoException;
+import com.mapr.fs.MapRFileStatus;
 import com.mapr.fs.MapRFileSystem;
+import com.mapr.fs.proto.Dbserver;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.util.Pair;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -44,7 +46,7 @@ public class SandboxAdminUtils {
     }
 
     public static void createTableCF(CLICommandFactory cmdFactory, String tablePath, String cf) {
-        ProcessedInput colFamilyCreationInput = new ProcessedInput(new String[] {
+        ProcessedInput input = new ProcessedInput(new String[] {
                 "table", "cf", "create",
                 "-path", tablePath,
                 "-cfname", cf
@@ -53,8 +55,8 @@ public class SandboxAdminUtils {
         // Create column family
         CommandOutput commandOutput = null;
         try {
-            DbCfCommands cfCreationCmd = (DbCfCommands) cmdFactory.getCLI(colFamilyCreationInput);
-            commandOutput = cfCreationCmd.executeRealCommand();
+            DbCfCommands cmd = (DbCfCommands) cmdFactory.getCLI(input);
+            commandOutput = cmd.executeRealCommand();
         } catch (Exception e) {
             SandboxAdminUtils.printErrors(commandOutput);
             e.printStackTrace(); // TODO handle properly
@@ -230,5 +232,85 @@ public class SandboxAdminUtils {
             System.exit(-1);
         }
 
+    }
+
+    /**
+     * Returns volume Name and volume mount path for the volume where a given file lives
+     * @param fs
+     * @param path path
+     * @return
+     * @throws IOException
+     */
+    public static Pair<String,Path> getVolumeInfoForPath(MapRFileSystem fs, Path path) throws IOException {
+        final Path rootDfsPath = new Path("/");
+
+        String volumeName = "mapr.cluster.root";
+        Path currentPath =  path;
+        while (!currentPath.equals(rootDfsPath)) {
+            MapRFileStatus stat = fs.getMapRFileStatus(currentPath);
+
+            if (stat.isVol()) {
+                volumeName = stat.getVolumeInfo().name;
+            }
+
+            currentPath = currentPath.getParent();
+        }
+
+        return Pair.newPair(volumeName, currentPath);
+    }
+
+    public static void createSnapshot(CLICommandFactory cmdFactory, String volumeName, String snapshotName) {
+        ProcessedInput input = new ProcessedInput(new String[] {
+                "snapshot", "create",
+                "-snapshotname", snapshotName,
+                "-volume", volumeName
+        });
+
+        try {
+            SnapshotCommands cmd = (SnapshotCommands) cmdFactory.getCLI(input);
+            cmd.executeRealCommand();
+        } catch (Exception e) {
+            e.printStackTrace(); // TODO handle properly
+        }
+    }
+
+    public static void removeSnapshot(CLICommandFactory cmdFactory, String volumeName, String snapshotName) {
+        ProcessedInput input = new ProcessedInput(new String[] {
+                "snapshot", "remove",
+                "-snapshotname", snapshotName,
+                "-volume", volumeName
+        });
+
+        try {
+            SnapshotCommands cmd = (SnapshotCommands) cmdFactory.getCLI(input);
+            cmd.executeRealCommand();
+        } catch (Exception e) {
+            e.printStackTrace(); // TODO handle properly
+        }
+    }
+
+    public static void lockEditsForTable(MapRFileSystem fs, String tablePathStr) throws IOException {
+        Path tablePath = new Path(tablePathStr);
+        List<Dbserver.ColumnFamilyAttr> cfAttrs = fs.listColumnFamily(tablePath, false);
+
+        for (Dbserver.ColumnFamilyAttr cfAttr : cfAttrs) {
+            Dbserver.ColumnFamilyAttr.Builder builder = cfAttr.toBuilder();
+            final String cfName = cfAttr.getSchFamily().getName();
+            if (!cfName.equals(SandboxTable.DEFAULT_META_CF_NAME) &&
+                    !cfName.equals(SandboxTable.DEFAULT_DIRTY_CF_NAME)) {
+
+                Dbserver.AccessControlExpression writePermAce = Dbserver.AccessControlExpression.newBuilder()
+                        .setAccessType(Dbserver.DBAccessType.FamilyWriteData)
+                        .build();
+
+                Dbserver.ColumnFamilyAttr.newBuilder().clearAces().addAces(writePermAce);
+
+                try {
+                    fs.modifyColumnFamily(tablePath, cfName, builder.build());
+                } catch (ErrnoException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
     }
 }

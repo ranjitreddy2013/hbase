@@ -71,7 +71,7 @@ public class SandboxTablePutIntegrationTest extends BaseSandboxIntegrationTest {
   }
 
   @Test
-  public void testAppendOnEmptyOriginal() throws IOException, SandboxException {
+  public void testPutOnEmptyOriginal() throws IOException, SandboxException {
     // CASE original empty, sandbox empty
     assertEquals("original should remain intact", null,
             getCellValue(hTableOriginal, newRowId, CF2, COL2));

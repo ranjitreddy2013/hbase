@@ -1,8 +1,12 @@
 package com.mapr.db.sandbox;
 
 import com.google.common.collect.Lists;
+import com.mapr.db.sandbox.utils.SandboxAdminUtils;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.ResultScanner;
+import org.apache.hadoop.hbase.util.Pair;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -12,8 +16,27 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.mapr.db.sandbox.SandboxTestUtils.*;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class SandboxPushIntegrationTest extends BaseSandboxIntegrationTest {
+    @Ignore
+    @Test
+    public void testPreventSandboxEditing() throws IOException {
+        setCellValue(hTableSandbox, newRowId, CF1, COL1, "initial val");
+        setCellValue(hTableSandbox, newRowId, CF2, COL1, "initial val");
+
+        SandboxAdminUtils.lockEditsForTable(fs, sandboxTablePath);
+
+        boolean thrown = false;
+        try {
+            setCellValue(hTableSandbox, newRowId, CF1, COL1, "another val");
+        } catch (Exception ex) {
+            thrown = true;
+        }
+
+        assertTrue("shouldn't be able to change the value of a locked sandbox CF", thrown);
+    }
+
     @Test
     public void testSimulataneousPush() throws IOException, SandboxException {
         final int SIMULATENOUS_TASKS = 6;
@@ -117,6 +140,57 @@ public class SandboxPushIntegrationTest extends BaseSandboxIntegrationTest {
                 }
             }
         };
+    }
+
+    @Test
+    public void testSnapshotPush() throws IOException, SandboxException {
+        // add a value to the original
+        setCellValue(hTableOriginal, newRowId, CF2, COL1, "initial val");
+
+        // create sandbox
+        String sandboxPath2 = String.format("%s_sand2", originalTablePath);
+        sandboxAdmin.createSandbox(sandboxPath2, originalTablePath);
+
+        HTable hTableSandbox2 = new HTable(conf, sandboxPath2);
+
+        ResultScanner origResults, sandResults;
+        origResults = hTableOriginal.getScanner(scan);
+        sandResults = hTableSandbox2.getScanner(scan);
+        assertEquals("table should have initial cell", 1L, countCells(origResults));
+        assertEquals("table should have initial cell", 1L, countCells(sandResults));
+
+
+        setCellValue(hTableSandbox2, newRowId, CF1, COL1, "v4");
+        sandResults = hTableSandbox2.getScanner(scan);
+        assertEquals("table should have initial cell + added one", 2L, countCells(sandResults));
+
+        sandboxAdmin.pushSandbox(sandboxPath2, true, false);
+
+        Pair<String, Path> volumeInfo = SandboxAdminUtils.getVolumeInfoForPath(fs, new Path(originalTablePath));
+        String volumeName = volumeInfo.getFirst();
+        String volumeMountPath = volumeInfo.getSecond().toString();
+        String origTableRelativeVolumePath = originalTablePath.substring(volumeMountPath.length());
+
+        String sandbox2Fid = SandboxTableUtils.getFidFromPath(fs, sandboxPath2);
+        String snapshotName = String.format(SandboxAdmin.SANDBOX_PUSH_SNAPSHOT_FORMAT, sandbox2Fid);
+
+        Path snapshotPath = new Path(String.format("%s/.snapshot/%s/%s",
+                volumeMountPath, snapshotName, origTableRelativeVolumePath));
+
+        // verify existence of table
+        assertTrue("snapshot should exist", fs.exists(snapshotPath));
+
+        // verify original content
+        origResults = hTableOriginal.getScanner(scan);
+        assertEquals("table should have initial cell + pushed content", 2L, countCells(origResults));
+
+        // verify snapshot's content
+        HTable hTableSnapshot = new HTable(conf, snapshotPath.toString());
+        origResults = hTableSnapshot.getScanner(scan);
+        assertEquals("table should have initial cell", 1L, countCells(origResults));
+
+        // cleanup the snapshot
+        SandboxAdminUtils.removeSnapshot(cmdFactory, volumeName, snapshotName);
     }
 
     // TODO add test where original is filled, and matching cell is updated in original before push (should mantain) the new value

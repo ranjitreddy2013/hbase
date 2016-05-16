@@ -2,10 +2,7 @@ package com.mapr.db.sandbox;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
-import com.mapr.cli.DbCfCommands;
-import com.mapr.cli.DbCommands;
-import com.mapr.cli.DbReplicaCommands;
-import com.mapr.cli.DbUpstreamCommands;
+import com.mapr.cli.*;
 import com.mapr.cliframework.base.*;
 import com.mapr.db.sandbox.utils.SandboxAdminUtils;
 import com.mapr.fs.MapRFileSystem;
@@ -14,6 +11,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.util.Pair;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.map.SerializationConfig;
 import org.json.JSONException;
@@ -21,8 +19,8 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
-import java.util.TreeSet;
 
 public class SandboxAdmin {
     private static final Log LOG = LogFactory.getLog(SandboxAdmin.class);
@@ -30,10 +28,13 @@ public class SandboxAdmin {
     private static final long REPLICA_WAIT_POLL_INTERVAL = 3000L;
     private static final long REPLICA_TO_PROXY_WAIT_TIME = 6000L;
     static final String LOCK_ACQ_FAIL_MSG = "Sandbox Push Lock could not be acquired";
+    public static final String SANDBOX_PUSH_SNAPSHOT_FORMAT = "sandbox_push_%s";
 
     MapRFileSystem fs;
-    ProxyManager pm;
     CLICommandFactory cmdFactory = CLICommandFactory.getInstance();
+    CLIShim cliShim = new CLIShim();
+    RecentSandboxTablesListManager recentSandboxManager = RecentSandboxTablesListManagers
+            .getRecentSandboxTablesListManagerForUser(cliShim.getUserLoginId());
 
     public void createSandbox(String sandboxTablePath, String originalTablePath) throws SandboxException, IOException {
         String originalFid = SandboxTableUtils.getFidFromPath(fs, originalTablePath);
@@ -43,35 +44,7 @@ public class SandboxAdmin {
         // creates paused replication from sand to original; original doesn't incl sand in the upstream
         SandboxAdminUtils.addTableReplica(cmdFactory, sandboxTablePath, originalTablePath, true);
         writeSandboxMetadataFile(sandboxTablePath, originalFid, SandboxTable.SandboxState.ENABLED);
-    }
-
-    /**
-     * creates proxy if needed, selects best proxy and
-     * creates all replication flows (sand -> proxy -> original)
-     * @param sandboxTablePath
-     * @param originalFid
-     * @throws IOException
-     * @throws SandboxException
-     */
-    @VisibleForTesting
-    ProxyManager.ProxyInfo setupProxy(String sandboxTablePath, String originalFid) throws IOException, SandboxException {
-        Path originalPath = SandboxTableUtils.pathFromFid(fs, originalFid);
-
-        TreeSet<ProxyManager.ProxyInfo> proxies = pm.loadProxyInfo(cmdFactory, originalFid, originalPath);
-
-        ProxyManager.ProxyInfo selectedProxy = pm.createProxy(proxies, originalPath, cmdFactory);
-
-        if (!proxies.contains(selectedProxy)) {
-            proxies.add(selectedProxy);
-            // write proxy list file
-            pm.saveProxyInfo(originalFid, originalPath, proxies);
-        }
-
-        // wire proxy
-        SandboxAdminUtils.addTableReplica(cmdFactory, sandboxTablePath, selectedProxy.proxyTablePath, true);
-        SandboxAdminUtils.addUpstreamTable(cmdFactory, selectedProxy.proxyTablePath, sandboxTablePath);
-
-        return selectedProxy;
+        recentSandboxManager.moveToTop(sandboxTablePath);
     }
 
     /**
@@ -89,14 +62,29 @@ public class SandboxAdmin {
         final Path lockFile = SandboxTableUtils.lockFilePath(fs, originalFid, originalPath);
         createLockFile(fs, lockFile);
 
+        // TODO add flag 'force' to make sure all the modifications have a recent timestamp? (pending on testing scenarios)
+        if (forcePush) {
+
+        }
+
+
+        // prevent any kind of editing to the sandbox table // TODO work in progress
+//        SandboxAdminUtils.lockEditsForTable(sandboxTablePath);
+
+
         // disable sandbox table
+        writeSandboxMetadataFile(sandboxTablePath, originalFid, SandboxTable.SandboxState.SNAPSHOT_CREATE);
+
+        if (snapshot) {
+            String snapshotName = String.format(SANDBOX_PUSH_SNAPSHOT_FORMAT, info.get(SandboxTable.InfoType.SANDBOX_FID));
+            Pair<String, Path> volumeInfo = SandboxAdminUtils.getVolumeInfoForPath(fs, originalPath.getParent());
+            String origTableVolumeName = volumeInfo.getFirst();
+            SandboxAdminUtils.createSnapshot(cmdFactory, origTableVolumeName, snapshotName);
+        }
+
         writeSandboxMetadataFile(sandboxTablePath, originalFid, SandboxTable.SandboxState.PUSH_STARTED);
 
-
-        // TODO add flag 'force' to make sure all the modifications have a recent timestamp? (pending on testing scenarios)
-
-        // limit how? TODO ask Kanna for result from experiences
-
+        // TODO do something about keeping the meta cf without affecting the current replication
         // Delete sandbox specific CFs
         SandboxAdminUtils.deleteCF(cmdFactory, sandboxTablePath, SandboxTable.DEFAULT_META_CF_NAME);
         SandboxAdminUtils.deleteCF(cmdFactory, sandboxTablePath, SandboxTable.DEFAULT_DIRTY_CF_NAME);
@@ -190,6 +178,8 @@ public class SandboxAdmin {
 
         // deletes sandbox
         SandboxAdminUtils.deleteTable(cmdFactory, sandboxTablePath);
+
+        recentSandboxManager.deleteIfNotExist(sandboxTablePath, fs);
     }
 
 
@@ -205,7 +195,6 @@ public class SandboxAdmin {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        pm = new ProxyManager(fs);
     }
 
     @VisibleForTesting
@@ -250,6 +239,7 @@ public class SandboxAdmin {
         CLICommandRegistry.getInstance().register(DbCfCommands.cfCommands);
         CLICommandRegistry.getInstance().register(DbReplicaCommands.replicaCommands);
         CLICommandRegistry.getInstance().register(DbUpstreamCommands.upstreamCommands);
+        CLICommandRegistry.getInstance().register(SnapshotCommands.snapshotCommands);
     }
 
     public void info(String originalTablePath) throws IOException, SandboxException {
@@ -263,5 +253,20 @@ public class SandboxAdmin {
         ObjectMapper om = new ObjectMapper();
         om.configure(SerializationConfig.Feature.INDENT_OUTPUT, true);
         System.out.println(om.writeValueAsString(props));
+    }
+
+    public List<String> listRecent() {
+        return recentSandboxManager.getListFromFile();
+    }
+
+    class CLIShim extends CLIBaseClass {
+        public CLIShim() {
+            super(null, null);
+        }
+
+        @Override
+        public CommandOutput executeRealCommand() throws CLIProcessingException {
+            return null; // not to be called
+        }
     }
 }

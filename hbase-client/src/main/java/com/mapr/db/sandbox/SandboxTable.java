@@ -16,11 +16,13 @@ final public class SandboxTable {
 
     public enum InfoType {
         ORIGINAL_FID,
+        SANDBOX_FID,
         SANDBOX_STATE
     }
 
     public enum SandboxState {
         ENABLED("Enabled"), // can be queried, manipulated, etc.
+        SNAPSHOT_CREATE("SnapshotCreate"),
         PUSH_STARTED("PushStarted"),
         PUSH_FINISHED("PushFinished");
 

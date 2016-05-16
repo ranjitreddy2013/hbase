@@ -6,19 +6,20 @@ import org.apache.commons.cli.*;
 import org.apache.hadoop.conf.Configuration;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 public class SandboxTool {
     static final String OP_CREATE = "create";
     static final String OP_PUSH = "push";
-    static final String OP_INFO = "info";
     static final String OP_DELETE = "delete";
+    static final String OP_LIST = "list";
 
     static final boolean DEFAULT_SNAPSHOT_BEFORE_PUSH = false;
     static final boolean DEFAULT_FORCE_PUSH = false;
 
-    static Options createOpts, pushOpts, infoOpts, deleteOpts;
+    static Options createOpts, pushOpts, listOpts, deleteOpts;
     static Map<String, Options> cmdOperationOpts = Maps.newHashMap();
     static {
         createOpts = new Options();
@@ -34,13 +35,12 @@ public class SandboxTool {
                 .create("path"));
         cmdOperationOpts.put(OP_CREATE, createOpts);
 
-        infoOpts = new Options();
-        infoOpts.addOption(OptionBuilder.withArgName("original table")
+        listOpts = new Options();
+        listOpts.addOption(OptionBuilder.withArgName("original table")
                 .hasArg()
                 .withDescription("original table path")
-                .isRequired()
                 .create("original"));
-        cmdOperationOpts.put(OP_INFO, infoOpts);
+        cmdOperationOpts.put(OP_LIST, listOpts);
 
         pushOpts = new Options();
         pushOpts.addOption(OptionBuilder.withArgName("sandbox table")
@@ -70,7 +70,6 @@ public class SandboxTool {
                 .isRequired()
                 .create("path"));
         cmdOperationOpts.put(OP_DELETE, deleteOpts);
-
     }
 
     public static void main(String[] args) throws IOException {
@@ -117,8 +116,20 @@ public class SandboxTool {
                     }
 
                     sandboxAdmin.pushSandbox(cmd.getOptionValue("path"), snapshot, forcePush);
-                } else if (operation.equals(OP_INFO)) {
-                    sandboxAdmin.info(cmd.getOptionValue("original"));
+                } else if (operation.equals(OP_LIST)) {
+                    String original = cmd.getOptionValue("original");
+
+                    if (original != null) {
+                        sandboxAdmin.info(original);
+                    } else {
+                        List<String> recentSandboxes = sandboxAdmin.listRecent();
+                        StringBuffer sb = new StringBuffer();
+                        // TODO paged
+                        for (String recentSandbox : recentSandboxes) {
+                            sb.append(recentSandbox).append("\n");
+                        }
+                        System.out.println(sb.toString());
+                    }
                 } else if (operation.equals(OP_DELETE)) {
                     sandboxAdmin.deleteSandbox(cmd.getOptionValue("path"));
                 }

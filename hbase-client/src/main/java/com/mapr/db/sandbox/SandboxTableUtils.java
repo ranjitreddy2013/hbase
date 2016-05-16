@@ -39,11 +39,11 @@ public class SandboxTableUtils {
         }
     }
 
-    public static String getFidFromPath(MapRFileSystem fs, String originalTablePath) throws IOException {
+    public static String getFidFromPath(MapRFileSystem fs, String tablePath) throws IOException {
         try {
-            return fs.getMapRFileStatus(new Path(originalTablePath)).getFidStr();
+            return fs.getMapRFileStatus(new Path(tablePath)).getFidStr();
         } catch (IOException e) {
-            throw new IOException("Could not grab FID from original table", e);
+            throw new IOException(String.format("Could not grab FID from table %s", tablePath), e);
         }
     }
 
@@ -61,9 +61,9 @@ public class SandboxTableUtils {
             // parse sandbox metadata file
             try {
                 BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(metaFilePath)));
-
+                info.put(SandboxTable.InfoType.SANDBOX_FID, getFidFromPath(fs, sandboxTablePath));
                 info.put(SandboxTable.InfoType.ORIGINAL_FID, br.readLine());
-//                info.put(SandboxTable.InfoType.PROXY_FID, br.readLine()); // TODO remove this
+                info.put(SandboxTable.InfoType.SANDBOX_STATE, br.readLine());
                 return info;
             } catch (IOException ex) {
                 throw new IOException(String.format("Error reading/parsing metadata file for sandbox table %s",
