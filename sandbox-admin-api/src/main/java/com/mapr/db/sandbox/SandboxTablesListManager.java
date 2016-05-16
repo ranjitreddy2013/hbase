@@ -23,7 +23,7 @@ public class SandboxTablesListManager {
 
     public static final String SBOX_TABLE_LIST_PREFIX_FORMAT = "/user/%s";
     public static final String GLOBAL_SANDBOX_TABLES_LIST_PATH = ".sandbox_tables";
-    public static final String ORIGINAL_SBOX_LIST_FILENAME_FORMAT = ".sandbox_list_%s"; // original fid
+    public static final String ORIGINAL_SBOX_LIST_FILENAME_FORMAT = ".sandbox_list%s"; // original fid
 
     private final Path listFilePath;
     private final MapRFileSystem fs;
@@ -144,11 +144,11 @@ public class SandboxTablesListManager {
         return GLOBAL_INSTANCE;
     }
 
-    public static SandboxTablesListManager forOriginalTable(MapRFileSystem fs, String originalPath, String originalFid, String username) {
+    public static SandboxTablesListManager forOriginalTable(MapRFileSystem fs, String originalPath, String username) {
         if (!registry.containsKey(originalPath)) {
             Path originalSboxListFilePath = new Path(String.format("%s/%s",
                     String.format(SBOX_TABLE_LIST_PREFIX_FORMAT, username),
-                    String.format(ORIGINAL_SBOX_LIST_FILENAME_FORMAT, originalFid)));
+                    String.format(ORIGINAL_SBOX_LIST_FILENAME_FORMAT, originalPath.replace("/","._"))));
 
             registry.put(originalPath, new SandboxTablesListManager(fs, originalSboxListFilePath, username));
         }

@@ -1,7 +1,7 @@
 package com.mapr.rest;
 
-import com.beust.jcommander.internal.Lists;
 import com.google.common.base.Joiner;
+import com.google.common.collect.Lists;
 import com.mapr.db.sandbox.SandboxException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.http.HttpResponse;

@@ -108,7 +108,7 @@ public class SandboxAdmin {
 
         // update lists
         SandboxTablesListManager origTableSandboxListManager = SandboxTablesListManager
-                .forOriginalTable(fs, originalTablePath, originalFid, username);
+                .forOriginalTable(fs, originalTablePath, username);
         globalSandboxListManager.moveToTop(sandboxTablePath);
         origTableSandboxListManager.moveToTop(sandboxTablePath);
     }
@@ -137,10 +137,6 @@ public class SandboxAdmin {
         if (info == null) {
             throw new SandboxException("Unable to identify metadata file", null);
         }
-
-//        final String originalFid = info.get(SandboxTable.InfoType.ORIGINAL_FID);
-//        final Path originalPath = SandboxTableUtils.pathFromFid(fs, originalFid);
-//        String originalTablePath = originalPath.toUri().toString();
 
         final String originalTablePath = info.get(SandboxTable.InfoType.ORIGINAL_PATH);
         final Path originalPath = new Path(originalTablePath);
@@ -298,12 +294,10 @@ public class SandboxAdmin {
         fs.delete(metadataFilePath, false);
 
         // update lists
-//        String originalFid = info.get(SandboxTable.InfoType.ORIGINAL_FID);
-//        Path originalPath = SandboxTableUtils.pathFromFid(fs, originalFid);
         final String originalPath = info.get(SandboxTable.InfoType.ORIGINAL_PATH);
 
         SandboxTablesListManager origTableSandboxListManager = SandboxTablesListManager
-                .forOriginalTable(fs, originalPath, null, username);
+                .forOriginalTable(fs, originalPath, username);
         globalSandboxListManager.delete(sandboxTablePath);
         origTableSandboxListManager.delete(sandboxTablePath);
     }
@@ -364,9 +358,8 @@ public class SandboxAdmin {
             return globalSandboxListManager.getListFromFile();
         }
 
-        String originalFid = SandboxTableUtils.getFidFromPath(fs, originalTablePath);
         SandboxTablesListManager originalSandboxListManager = SandboxTablesListManager
-                .forOriginalTable(fs, originalTablePath, originalFid, username);
+                .forOriginalTable(fs, originalTablePath, username);
 
         return originalSandboxListManager.getListFromFile();
     }
