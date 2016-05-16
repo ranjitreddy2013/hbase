@@ -1,235 +1,146 @@
 package com.mapr.db.sandbox;
 
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HBaseConfiguration;
-import org.apache.hadoop.hbase.HColumnDescriptor;
-import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.TableName;
-import org.apache.hadoop.hbase.client.*;
-import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.client.Append;
+import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.util.Bytes;
-
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
 import org.junit.Test;
-import static org.junit.Assert.*;
-
-import static com.mapr.db.sandbox.SandboxTestUtils.countCells;
-import static com.mapr.db.sandbox.SandboxTestUtils.countRows;
-import static com.mapr.db.sandbox.SandboxTable.DEFAULT_META_CF_NAME;
-import static com.mapr.db.sandbox.SandboxTable.DEFAULT_META_CF;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.ArrayList;
+
+import static org.junit.Assert.assertEquals;
 
 public class SandboxTableAppendIntegrationTest extends BaseSandboxIntegrationTest {
-  protected static Configuration conf = HBaseConfiguration.create();
-  protected static String productionTablePath;
-  protected static String sandboxTablePath;
+    final byte[] rowId = Bytes.toBytes("row900");
+    final byte[] col1 = Bytes.toBytes("col1");
 
-  protected static HTable hTableProduction;
-  protected static HTable hTableSandbox;
-  protected static SandboxAdmin sandboxAdmin;
+    @Test
+    public void testAppendDataNotInOriginalNotInSandbox() throws IOException {
+        // data not in original and not in sandbox
+        final String val = "v900";
 
-  @BeforeClass
-  public static void createProductionAndSandboxTables() throws IOException, SandboxException {
-      // create production table
-      assureWorkingDirExists();
-      hba = new HBaseAdmin(conf);
-      String productionTableName = Long.toHexString(Double.doubleToLongBits(Math.random()));
-      productionTablePath = String.format("%s%s", TABLE_PREFIX, productionTableName);
-      HTableDescriptor tableDescriptor = new HTableDescriptor(TableName.valueOf(productionTablePath));
-      tableDescriptor.addFamily(new HColumnDescriptor("cf1"));
-      tableDescriptor.addFamily(new HColumnDescriptor("cf2"));
-      tableDescriptor.addFamily(new HColumnDescriptor("cf3"));
-      hba.createTable(tableDescriptor);
+        // test appending to the value of a new row
+        Append append1 = new Append(rowId);
+        append1.add(CF1, col1, Bytes.toBytes(val));
+        hTableSandbox.append(append1);
+        hTableSandbox.flushCommits();
 
-      // insert some data to production
-      hTableProduction = new HTable(conf, productionTablePath);
-      for (int i = 0; i < 25; i++) {
-        Put put = new Put(Bytes.toBytes("row" + Integer.toString(i)));
-        put.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(i)));
-        put.add(Bytes.toBytes("cf1"), Bytes.toBytes("col2"), Bytes.toBytes(Integer.toString(i)));
-        put.add(Bytes.toBytes("cf2"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(i)));
-        put.add(Bytes.toBytes("cf3"), Bytes.toBytes("col3"), Bytes.toBytes(Integer.toString(i)));
-        hTableProduction.put(put);
-      }
-      hTableProduction.flushCommits();
+        Get get1 = new Get(rowId);
+        get1.addColumn(CF1, col1);
+        String orig = Bytes.toString(hTableOriginal.get(get1).getValue(CF1, col1));
+        String sand = Bytes.toString(hTableSandbox.get(get1).getValue(CF1, col1));
+        assertEquals("value not in original. should return null.", orig, null);
+        assertEquals("value should be appended as is in sandbox", sand, val);
+    }
 
-      // create sandbox table
-      sandboxAdmin = new SandboxAdmin(new Configuration());
-      String sandboxTablePath = String.format("%s_new_sand", productionTablePath);
-      String sandboxTableMetaFile = String.format("%s_new_meta", sandboxTablePath);
-      sandboxAdmin.createSandbox(sandboxTablePath, productionTablePath);
-      hTableSandbox = new HTable(conf, sandboxTablePath);
+    @Test
+    public void testAppendDataNotInOriginalNotInSandbox2() throws IOException {
+        // data not in original and not in sandbox
+        final String val = "v900";
 
-      // insert some data only to sandbox
-      for (int i = 25; i < 35; i++) {
-        Put put = new Put(Bytes.toBytes("row" + Integer.toString(i)));
-        put.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(i)));
-        put.add(Bytes.toBytes("cf1"), Bytes.toBytes("col2"), Bytes.toBytes(Integer.toString(i)));
-        put.add(Bytes.toBytes("cf2"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(i)));
-        put.add(Bytes.toBytes("cf3"), Bytes.toBytes("col3"), Bytes.toBytes(Integer.toString(i)));
-        //put.add(Bytes.toBytes("cf4"), Bytes.toBytes("col2"), Bytes.toBytes(Integer.toString(i)));
+        // create existing column
+        Put put = new Put(rowId);
+        put.add(CF1, Bytes.toBytes("col0"), Bytes.toBytes("some value"));
         hTableSandbox.put(put);
-      }
-      hTableSandbox.flushCommits();
 
-      // insert some data only to production
-      hTableProduction = new HTable(conf, productionTablePath);
-      for (int i = 35; i < 40; i++) {
-        Put put = new Put(Bytes.toBytes("row" + Integer.toString(i)));
-        put.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(i)));
-        //put.add(Bytes.toBytes("cf5"), Bytes.toBytes("col1"), Bytes.toBytes(Integer.toString(i)));
-        hTableProduction.put(put);
-      }
-      hTableProduction.flushCommits();
-  }
+        // test appending to the value of a new column
+        Append append1 = new Append(rowId);
+        append1.add(CF1, col1, Bytes.toBytes(val));
+        hTableSandbox.append(append1);
+        hTableSandbox.flushCommits();
+
+        Get get1 = new Get(rowId);
+        get1.addColumn(CF1, col1);
+        String orig = Bytes.toString(hTableOriginal.get(get1).getValue(CF1, col1));
+        String sand = Bytes.toString(hTableSandbox.get(get1).getValue(CF1, col1));
+        assertEquals("value not in original. should return null.", orig, null);
+        assertEquals("value should be appended as is in sandbox", sand, val);
+    }
 
 
-  @Test
-  // data not in production and not in sandbox
-  public void testSandboxAppendNotInProductionNotInSandbox() throws IOException {
-    // test appending to the value of a new row
-    Append append1 = new Append(Bytes.toBytes("row900"));
-    append1.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes("v900"));
-    hTableSandbox.append(append1);
-    Get get1 = new Get(Bytes.toBytes("row900"));
-    get1.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col1"));
-    String prod = Bytes.toString(hTableProduction.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-    String sand = Bytes.toString(hTableSandbox.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-    assertEquals("value not in production. should return null.", prod, null);
-    assertEquals("value should be appended as is in sandbox", sand, "v900");
+    @Test
+    // data not in original but in sandbox
+    public void testSandboxAppendNotInOriginalInSandbox() throws IOException {
+        final String val = "v125";
+        final String prefix = "someprefix";
 
-    // test appending to the value of a new column
-    Append append2 = new Append(Bytes.toBytes("row900"));
-    append2.add(Bytes.toBytes("cf1"), Bytes.toBytes("col900"), Bytes.toBytes("v900"));
-    hTableSandbox.append(append2);
-    Get get2 = new Get(Bytes.toBytes("row900"));
-    get2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col900"));
-    prod = Bytes.toString(hTableProduction.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col900")));
-    sand = Bytes.toString(hTableSandbox.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col900")));
-    assertEquals("value not in production. should return null.", prod, null);
-    assertEquals("new column. value should be appended as is in sandbox", sand, "v900");
+        // insert some data
+        Put put = new Put(rowId);
+        put.add(CF1, col1, Bytes.toBytes(prefix));
+        hTableSandbox.put(put);
+        hTableSandbox.flushCommits();
 
-    // test deletion marker in meta _shadow column family
-    Get get = new Get(Bytes.toBytes("row1"));
-    get.addFamily(DEFAULT_META_CF);
-    // TODO query the _shadow table for checking deletionMark
-    //resultSandbox = hTableSandbox.get(get);
-    //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
-    //assertEquals("value should be null for production", sand, null);
-    //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-    //assertFalse("deletionMark should be removed if present", hTableProduction.exists(get));
-  }
+        // test appending to the value of an already existing column
+        Append append1 = new Append(rowId);
+        append1.add(CF1, col1, Bytes.toBytes(val));
+        hTableSandbox.append(append1);
+        hTableSandbox.flushCommits();
 
-  @Test
-  // data not in production but in sandbox
-  public void testSandboxAppendNotInProductionInSandbox() throws IOException {
-    // test appending to the value of an already existing column
-    Append append1 = new Append(Bytes.toBytes("row25"));
-    append1.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes("v125"));
-    hTableSandbox.append(append1);
-    Get get1 = new Get(Bytes.toBytes("row25"));
-    get1.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col1"));
-    String prod = Bytes.toString(hTableProduction.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-    String sand = Bytes.toString(hTableSandbox.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-    assertEquals("value not in production. should return null.", prod, null);
-    assertEquals("value should be appended to the existing value in sandbox", sand, "25v125");
+        Get get1 = new Get(rowId);
+        get1.addColumn(CF1, col1);
+        String orig = Bytes.toString(hTableOriginal.get(get1).getValue(CF1, col1));
+        String sand = Bytes.toString(hTableSandbox.get(get1).getValue(CF1, col1));
+        assertEquals("value not in original. should return null.", orig, null);
+        assertEquals("value should be appended to the existing value in sandbox", sand, prefix + val);
+    }
 
-    // test appending to the value of a new column
-    Append append2 = new Append(Bytes.toBytes("row25"));
-    append2.add(Bytes.toBytes("cf1"), Bytes.toBytes("col125"), Bytes.toBytes("v125"));
-    hTableSandbox.append(append2);
-    Get get2 = new Get(Bytes.toBytes("row25"));
-    get2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col125"));
-    prod = Bytes.toString(hTableProduction.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col125")));
-    sand = Bytes.toString(hTableSandbox.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col125")));
-    assertEquals("value not in production. should return null.", prod, null);
-    assertEquals("new column. value should be appended as is in sandbox", sand, "v125");
+    @Test
+    public void testSandboxAppendInOriginalNotInSandbox() throws IOException {
+        // data in original but not in sandbox
+        final String val = "v135";
+        final String prefix = "someprefix";
 
-    // test deletion marker in meta _shadow column family
-    Get get = new Get(Bytes.toBytes("row1"));
-    get.addFamily(DEFAULT_META_CF);
-    // TODO query the _shadow table for checking deletionMark
-    //resultSandbox = hTableSandbox.get(get);
-    //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
-    //assertEquals("value should be null for production", sand, null);
-    //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-    //assertFalse("deletionMark should be removed if present", hTableProduction.exists(get));
-  }
+        // populate original
+        // insert some data
+        Put put = new Put(rowId);
+        put.add(CF1, col1, Bytes.toBytes(prefix));
+        hTableOriginal.put(put);
+        hTableOriginal.flushCommits();
 
-  @Test
-  // data in production but not in sandbox
-  public void testSandboxAppendInProductionNotInSandbox() throws IOException {
-    // test appending to the value of an already existing column
-    Append append1 = new Append(Bytes.toBytes("row35"));
-    append1.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes("v135"));
-    hTableSandbox.append(append1);
-    Get get1 = new Get(Bytes.toBytes("row35"));
-    get1.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col1"));
-    String prod = Bytes.toString(hTableProduction.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-    String sand = Bytes.toString(hTableSandbox.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-    assertEquals("value should not be appended in production", prod, "35");
-    assertEquals("value should be fetched from production and appended in sandbox", sand, "35v135");
+        // test appending to the value in sandbox
+        Append append1 = new Append(rowId);
+        append1.add(CF1, col1, Bytes.toBytes(val));
+        hTableSandbox.append(append1);
+        hTableSandbox.flushCommits();
 
-    // test appending to the value of a new column
-    Append append2 = new Append(Bytes.toBytes("row35"));
-    append2.add(Bytes.toBytes("cf1"), Bytes.toBytes("col135"), Bytes.toBytes("v135"));
-    hTableSandbox.append(append2);
-    Get get2 = new Get(Bytes.toBytes("row35"));
-    get2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col135"));
-    prod = Bytes.toString(hTableProduction.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col135")));
-    sand = Bytes.toString(hTableSandbox.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col135")));
-    assertEquals("value not in production. should return null.", prod, null);
-    assertEquals("new column. value should be appended as is in sandbox", sand, "v135");
+        Get get1 = new Get(rowId);
+        get1.addColumn(CF1, col1);
+        String orig = Bytes.toString(hTableOriginal.get(get1).getValue(CF1, col1));
+        String sand = Bytes.toString(hTableSandbox.get(get1).getValue(CF1, col1));
+        assertEquals("value should not be appended in original", orig, prefix);
+        assertEquals("value should be fetched from original and appended in sandbox", sand, prefix+val);
+    }
 
-    // test deletion marker in meta _shadow column family
-    Get get = new Get(Bytes.toBytes("row1"));
-    get.addFamily(DEFAULT_META_CF);
-    // TODO query the _shadow table for checking deletionMark
-    //resultSandbox = hTableSandbox.get(get);
-    //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
-    //assertEquals("value should be null for production", sand, null);
-    //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-    //assertFalse("deletionMark should be removed if present", hTableProduction.exists(get));
-  }
+    @Test
+    public void testSandboxAppendInOriginalInSandbox() throws IOException {
+        // data in original and in sandbox
+        final String val = "v135";
+        final String prefix = "someprefix";
+        final String prefixS = "tralala";
 
-  @Test
-  // data in production and in sandbox
-  public void testSandboxAppendInProductionInSandbox() throws IOException {
-    // test appending to the value of an already existing column
-    Append append1 = new Append(Bytes.toBytes("row1"));
-    append1.add(Bytes.toBytes("cf1"), Bytes.toBytes("col1"), Bytes.toBytes("v101"));
-    hTableSandbox.append(append1);
-    Get get1 = new Get(Bytes.toBytes("row1"));
-    get1.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col1"));
-    String prod = Bytes.toString(hTableProduction.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-    String sand = Bytes.toString(hTableSandbox.get(get1).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col1")));
-    assertEquals("value should not be appended in production", prod, "1");
-    assertEquals("value should be appended in sandbox", sand, "1v101");
+        // populate original
+        Put put = new Put(rowId);
+        put.add(CF1, col1, Bytes.toBytes(prefix));
+        hTableOriginal.put(put);
+        hTableOriginal.flushCommits();
 
-    // test appending to the value of a new column
-    Append append2 = new Append(Bytes.toBytes("row1"));
-    append2.add(Bytes.toBytes("cf1"), Bytes.toBytes("col101"), Bytes.toBytes("v101"));
-    hTableSandbox.append(append2);
-    Get get2 = new Get(Bytes.toBytes("row1"));
-    get2.addColumn(Bytes.toBytes("cf1"), Bytes.toBytes("col101"));
-    prod = Bytes.toString(hTableProduction.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col101")));
-    sand = Bytes.toString(hTableSandbox.get(get2).getValue(Bytes.toBytes("cf1"), Bytes.toBytes("col101")));
-    assertEquals("value not in production. should return null.", prod, null);
-    assertEquals("value should be appended as is in sandbox", sand, "v101");
+        // populate sandbox
+        Put putS = new Put(rowId);
+        putS.add(CF1, col1, Bytes.toBytes(prefixS));
+        hTableSandbox.put(putS);
+        hTableSandbox.flushCommits();
 
-    // test deletion marker in meta _shadow column family
-    Get get = new Get(Bytes.toBytes("row1"));
-    get.addFamily(DEFAULT_META_CF);
-    // TODO query the _shadow table for checking deletionMark
-    //resultSandbox = hTableSandbox.get(get);
-    //sand = Bytes.toString(resultSandbox.getValue(DEFAULT_META_CF, Bytes.toBytes("cf1:col1")));
-    //assertEquals("value should be null for production", sand, null);
-    //assertTrue("shadow cf should be present", hTableSandbox.getTableDescriptor().hasFamily(DEFAULT_META_CF));
-    //assertFalse("deletionMark should be removed if present", hTableProduction.exists(get));
-  }
+        // test appending to the value in sandbox
+        Append append1 = new Append(rowId);
+        append1.add(CF1, col1, Bytes.toBytes(val));
+        hTableSandbox.append(append1);
+        hTableSandbox.flushCommits();
 
+        Get get1 = new Get(rowId);
+        get1.addColumn(CF1, col1);
+        String orig = Bytes.toString(hTableOriginal.get(get1).getValue(CF1, col1));
+        String sand = Bytes.toString(hTableSandbox.get(get1).getValue(CF1, col1));
+        assertEquals("value should not be appended in original", orig, prefix);
+        assertEquals("value should be appended to the sandbox", sand, prefixS+val);
+    }
 }
