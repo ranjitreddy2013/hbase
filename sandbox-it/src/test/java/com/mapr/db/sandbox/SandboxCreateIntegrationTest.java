@@ -38,11 +38,6 @@ public class SandboxCreateIntegrationTest extends BaseSandboxIntegrationTest {
     	hba.createTable(tableDescriptor);
     }
 
-    @AfterClass
-    public static void cleanupproductionTable() throws IOException {
-    	hba.deleteTable(productionTablePath);
-    }
-
     // TODO remove unnecessary comments
     @Test
     public void testSandboxCreate() throws IOException, SandboxException {
@@ -61,7 +56,7 @@ public class SandboxCreateIntegrationTest extends BaseSandboxIntegrationTest {
         List<String> production_colfam = SandboxTestUtils.getColumnFamilies(hTableproduction);
         List<String> sandbox_colfam = SandboxTestUtils.getColumnFamilies(hTableSandbox);
         // TODO load the metadata CF name from constant
-        production_colfam.add(0, new String("_shadow")); // sandbox has an additional cf named _shadow
+        production_colfam.add(0, SandboxTable.DEFAULT_META_CF_NAME); // sandbox has an additional cf for metadata
 
         assertEquals("column families same in production and sandbox",
                         production_colfam, sandbox_colfam);
@@ -72,5 +67,11 @@ public class SandboxCreateIntegrationTest extends BaseSandboxIntegrationTest {
         // check if sandbox has been removed
         //assertEquals("sandbox table deleted", hba.tableExists(sandboxTablePath), false);
         //assertEquals("sandbox meta file deleted", fs.exists(new Path(sandboxTableMetaFile)), false);
+    }
+
+
+    @AfterClass
+    public static void cleanupproductionTable() throws IOException {
+        hba.deleteTable(productionTablePath);
     }
 }

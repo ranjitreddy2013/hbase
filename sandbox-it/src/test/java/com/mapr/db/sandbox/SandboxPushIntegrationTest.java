@@ -15,6 +15,15 @@ import static org.junit.Assert.assertEquals;
 public class SandboxPushIntegrationTest extends BaseSandboxIntegrationTest {
 
     @Test
+    public void testA() throws IOException, SandboxException {
+        testSandboxCountRows();
+    }
+
+    @Test
+    public void testB() throws IOException, SandboxException {
+        testSandboxCountRows();
+    }
+
     public void testSandboxCountRows() throws IOException, SandboxException {
         HTable hTableOriginal = new HTable(conf, originalTablePath);
         HTable hTableSandbox = new HTable(conf, sandboxTablePath);

@@ -10,9 +10,7 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.junit.After;
-import org.junit.AfterClass;
 import org.junit.Before;
-import org.junit.BeforeClass;
 
 import java.io.IOException;
 
@@ -21,7 +19,7 @@ public abstract class BaseSandboxIntegrationTest {
     static final byte[] FAMILY_BYTES = FAMILY.getBytes();
 
     // TODO load from settings as env specific
-    static final String TABLE_PREFIX = "/philips_sandbox_it_tmp/" + randomName();
+    static String TABLE_PREFIX = "/philips_sandbox_it_tmp/";
 
 
     protected static Configuration conf;
@@ -46,15 +44,6 @@ public abstract class BaseSandboxIntegrationTest {
     protected static String originalTablePath;
     protected String sandboxTablePath;
 
-    @BeforeClass
-    public static void setupOriginalTable() throws IOException {
-        assureWorkingDirExists();
-
-        sandboxAdmin = new SandboxAdmin(new Configuration());
-        originalTablePath = String.format("%s/%s", TABLE_PREFIX, "table");
-        SandboxAdminUtils.createTable(cmdFactory, originalTablePath);
-        SandboxAdminUtils.createTableCF(cmdFactory, originalTablePath, "cf");
-    }
 
     protected static void assureWorkingDirExists() throws IOException {
         Path tableDirPath = new Path(TABLE_PREFIX);
@@ -68,21 +57,33 @@ public abstract class BaseSandboxIntegrationTest {
     }
 
     @Before
-    public void setupSandbox() throws SandboxException, IOException {
+    public void setupTest() throws SandboxException, IOException {
+        TABLE_PREFIX += randomName();
+
+        assureWorkingDirExists();
+
+        // create original
+        sandboxAdmin = new SandboxAdmin(new Configuration());
+        originalTablePath = String.format("%s/%s", TABLE_PREFIX, "table");
+        SandboxAdminUtils.createTable(cmdFactory, originalTablePath);
+        SandboxAdminUtils.createTableCF(cmdFactory, originalTablePath, "cf");
+
+        // sandbox
         sandboxTablePath = String.format("%s_sand", originalTablePath);
         sandboxAdmin.createSandbox(sandboxTablePath, originalTablePath);
     }
 
     @After
     public void cleanupSandboxTable() throws IOException {
+        // delete sandbox table if it still exists
         if (fs.exists(new Path(sandboxTablePath))) {
             sandboxAdmin.deleteSandbox(sandboxTablePath);
         }
-    }
 
-    @AfterClass
-    public static void cleanupOriginalTable() throws IOException {
+        // delete original table and cleanup test directory
         sandboxAdmin.deleteTable(originalTablePath);
-        fs.delete(new Path(TABLE_PREFIX), false);
+
+        // recursive = true  because proxy tables might still exist
+        fs.delete(new Path(TABLE_PREFIX), true);
     }
 }

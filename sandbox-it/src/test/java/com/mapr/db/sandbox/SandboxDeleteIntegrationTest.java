@@ -16,8 +16,10 @@ public class SandboxDeleteIntegrationTest extends BaseSandboxIntegrationTest {
     @Test
     public void testSandboxDelete() throws IOException, SandboxException {
         String sandboxTablePath = String.format("%s_sand1", originalTablePath);
-        String sandboxTableMetaFile = String.format("%s_meta", sandboxTablePath);
         sandboxAdmin.createSandbox(sandboxTablePath, originalTablePath);
+
+        Path sandboxMetaPath = SandboxTableUtils.metafilePath(fs, sandboxTablePath);
+
         HTable hTableOriginal = new HTable(conf, originalTablePath);
         HTable hTableSandbox = new HTable(conf, sandboxTablePath);
 
@@ -26,14 +28,14 @@ public class SandboxDeleteIntegrationTest extends BaseSandboxIntegrationTest {
 
         // check if sandbox exists
         assertEquals("sandbox table exists", hba.tableExists(sandboxTablePath), true);
-        assertEquals("sandbox meta file exists", fs.exists(new Path(sandboxTableMetaFile)), true);
+        assertEquals("sandbox meta file exists", fs.exists(sandboxMetaPath), true);
 
         // delete sandbox
         sandboxAdmin.deleteSandbox(sandboxTablePath);
 
         // check if sandbox has been removed
         assertEquals("sandbox table deleted", hba.tableExists(sandboxTablePath), false);
-        assertEquals("sandbox meta file deleted", fs.exists(new Path(sandboxTableMetaFile)), false);
+        assertEquals("sandbox meta file deleted", fs.exists(sandboxMetaPath), false);
     }
 
 }
