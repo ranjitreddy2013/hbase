@@ -370,113 +370,99 @@ public class SandboxHTable {
     }
 
     public static void mutateRow(SandboxTable sandboxTable, RowMutations rm) throws IOException {
+        if (!sandboxTable.sandboxFeatureEnabled) {
+            throw new UnsupportedOperationException(CANNOT_MUTATE_WHEN_DISABLED_MSG);
+        }
+
+        final byte[] rowId = rm.getRow();
+        RowMutations adaptRM = adaptRowMutations(sandboxTable, rm);
+
+        try {
+            // TODO retry?
+            sandboxTable.table
+                    .checkAndMutate(rowId,  SandboxTable.DEFAULT_DIRTY_CF, SandboxTable.DEFAULT_TID_COL,
+                            CompareFilter.CompareOp.EQUAL, null, adaptRM);
+        } catch (IOException e) {
+            throw new InterruptedIOException(e.toString());
+        }
+    }
+
+    private static RowMutations adaptRowMutations(SandboxTable sandboxTable, RowMutations rm) throws IOException {
         final byte[] rowId = rm.getRow();
         RowMutations finalRm = new RowMutations(rowId);
 
         for (Mutation mutation : rm.getMutations()) {
             Class clz = mutation.getClass();
+            RowMutations opRm = new RowMutations(rowId);
+
             // if it is a delete, add the put to metadata table
             if (clz.equals(Delete.class)) {
-                Delete delete = (Delete) mutation;
-//                Put markForDeletionPut = null;SandboxTableUtils.markForDeletionPut(sandboxTable, delete);
-                finalRm.add(delete);
-                // TODO change!
-//                finalRm.add(markForDeletionPut);
+                _rowMutationsForDelete(finalRm, sandboxTable, (Delete) mutation);
             }  else if (clz.equals(Put.class)) {
-                // if it is a PUT, make sure there is no delete there
-                Put put = (Put) mutation;
-                Delete deletionMarkDelete = removeDeletionMarkForPut(put);
-                finalRm.add(put);
-                finalRm.add(deletionMarkDelete);
+                _rowMutationsForPut(finalRm, (Put) mutation);
             }
         }
 
-		try {
-			// TODO retry?
-			sandboxTable.table.checkAndMutate(rowId,
-					SandboxTable.DEFAULT_DIRTY_CF,
-					SandboxTable.DEFAULT_TID_COL,
-					CompareFilter.CompareOp.EQUAL, null, rm);
-		} catch (IOException e) {
-			throw new InterruptedIOException(e.toString());
-		}
-	}
-    
-	/**
-	 * Append might be executed distributedly and it is very important for this
-	 * operation to happen on the server side. For this reason, the sandbox
-	 * implementation only makes sure if the column to be appended exists on
-	 * both original and sandbox. If it does only exist on original the value is
-	 * read and used as an increment (it fails if it is not an integer). If not,
-	 * a normal append is executed in the sandbox table and a delete
-	 * markForDeletion column as well (just like in PUTs).
-	 * 
-	 * @param sandboxTable
-	 *            the sandboxTable definition
-	 * @param append
-	 *            the append definition
-	 * @return the appended result
-	 * @throws IOException
-	 */
+        return finalRm;
+    }
 
-	public static Result append(SandboxTable sandboxTable, Append append)
-			throws IOException {
-		byte[] rowId = append.getRow();
-		// fetch which columns are going to be appended
-		// TODO use CellSet
-		NavigableMap<byte[], List<Cell>> familyCellMap = append
-				.getFamilyCellMap();
+    /**
+     * Append might be executed distributedly and it is very important for this operation to
+     * happen on the server side. For this reason, the sandbox implementation only makes sure if the column
+     * to be appended exists on both original and sandbox. If it does only exist on original the value is
+     * read and used as an increment (it fails if it is not an integer).
+     * If not, a normal append is executed in the sandbox table and a delete markForDeletion column
+     * as well (just like in PUTs).
+     * @param sandboxTable the sandboxTable definition
+     * @param append the append definition
+     * @return the appended result
+     * @throws IOException
+     */
+    public static Result append(SandboxTable sandboxTable, final Append append) throws IOException {
+        if (!sandboxTable.sandboxFeatureEnabled) {
+            throw new UnsupportedOperationException(CANNOT_MUTATE_WHEN_DISABLED_MSG);
+        }
 
-		RowMutations rowMutations = new RowMutations(rowId);
+        byte[] rowId = append.getRow();
+        AtomicSandboxMutationOp op = new AtomicSandboxMutationOp(sandboxTable, rowId, append) {
+            @Override
+            protected Result runMutationOnSandbox() throws IOException {
+                // increment normally
+                return sandboxTable.table.append(append);
+            }
 
-		// fetch the column versions from both sides
-		Get get = new Get(rowId);
-		for (byte[] family : familyCellMap.keySet()) {
-			List<Cell> cellToAppend = familyCellMap.get(family);
+            @Override
+            protected Result runMutationOnDirty(Map<Cell, ByteBuffer> originalCellToDirtyQualifMap) throws IOException {
+                // apply transformed append
+                final Append adaptedAppend = new Append(rowId);
 
-			for (Cell cell : cellToAppend) {
-				byte[] qualifier = CellUtil.cloneQualifier(cell);
-				get.addColumn(family, qualifier);
-			}
-		}
+                for (Map.Entry<byte[], List<Cell>> appendOpFamMapEntry : append.getFamilyCellMap().entrySet()) {
+                    final byte[] family = appendOpFamMapEntry.getKey();
 
-		// fetch merged result
-		Result result = get(sandboxTable, get);
+                    for (Cell opCell : appendOpFamMapEntry.getValue()) {
+                        final byte[] qualififer = CellUtil.cloneQualifier(opCell);
+                        final byte[] value = CellUtil.cloneValue(opCell);
 
-		for (byte[] family : familyCellMap.keySet()) {
-			List<Cell> cellToAppend = familyCellMap.get(family);
+                        // if it's in dirty, ignore
+                        ByteBuffer dirtyQualifForCell = originalCellToDirtyQualifMap.get(opCell);
+                        if (dirtyQualifForCell != null) {
+                            // there's a dirty column for this one
+                            byte[] dirtyQualififer = dirtyQualifForCell.array();
+                            adaptedAppend.add(SandboxTable.DEFAULT_DIRTY_CF, dirtyQualififer, value);
+                        } else {
+                            adaptedAppend.add(family, qualififer, value);
+                        }
 
-			for (Cell cell : cellToAppend) {
-				byte[] qualifier = CellUtil.cloneQualifier(cell);
 
-				// get cell from merged result
-				Cell lastVersionCell = result.getColumnLatestCell(family,
-						qualifier);
+                    }
+                }
 
-				byte[] existingValue = new byte[0];
-				if (lastVersionCell != null) {
-					existingValue = CellUtil.cloneValue(lastVersionCell);
-				}
-				byte[] appendValue = CellUtil.cloneValue(cell);
+                return this.sandboxTable.table.append(adaptedAppend);
+            }
+        };
 
-				byte[] resultValue = new byte[existingValue.length
-						+ appendValue.length];
-				System.arraycopy(existingValue, 0, resultValue, 0,
-						existingValue.length);
-				System.arraycopy(appendValue, 0, resultValue,
-						existingValue.length, appendValue.length);
-
-				Put put = new Put(rowId);
-				put.add(family, qualifier, resultValue);
-				rowMutations.add(put);
-			}
-		}
-
-		mutateRow(sandboxTable, rowMutations);
-		return get(sandboxTable, get);
-	}
-
-	static final int MAX_TRIES = 300;
+        return op.runMutation();
+    }
 
     /**
      * Increment might be executed distributedly and it is very important for this operation to
@@ -490,287 +476,157 @@ public class SandboxHTable {
      * @return
      * @throws IOException
      */
-    public static Result increment(SandboxTable sandboxTable, Increment increment) throws IOException {
-    	final byte[] rowId = increment.getRow();
-        final byte[] transactionId = generateTransactionId(increment);
-        Result result = null;
-
-        // attempt to acquire lock
-        int tries = MAX_TRIES + 1;
-        try {
-            while (!acquireLock(sandboxTable, rowId, transactionId) && --tries > 0) {
-                Thread.sleep(1L);
-
-
-            }
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+    public static Result increment(SandboxTable sandboxTable, final Increment increment) throws IOException {
+        if (!sandboxTable.sandboxFeatureEnabled) {
+            throw new UnsupportedOperationException(CANNOT_MUTATE_WHEN_DISABLED_MSG);
         }
 
-        if (tries == 0) {
+        final byte[] rowId = increment.getRow();
 
-            throw new IOException("Sandbox Row Lock – could not acquire lock");
-        }
-
-        // empty unless columns are copied to dirty CF. format   dirtyColumnQualif => Cell(family,qualifier) to be incremented
-        Map<ByteBuffer, Cell> cellToDirtyColumnQualifMap = Maps.newHashMap();
-
-        // lock acquired
-        try {
-            CellSet cellSet = new CellSet(increment.getFamilyCellMap());
-
-            // TODO extract method
-            final Get get = new Get(rowId);
-            for (Cell cell : cellSet) {
-                byte[] family = CellUtil.cloneFamily(cell);
-                byte[] qualifier = CellUtil.cloneQualifier(cell);
-                get.addColumn(family, qualifier);
-            }
-            // get sandbox
-            Result sandboxResult = sandboxTable.table.get(enrichGet(get));
-            Result originalResult = null;
-
-            CellSet sandboxNonExistentCells = new CellSet();
-            CellSet sandboxMarkedAsDeletedCells = new CellSet();
-
-            for (Cell cell : cellSet) {
-                byte[] family = CellUtil.cloneFamily(cell);
-                byte[] qualifier = CellUtil.cloneQualifier(cell);
-
-                // sandbox cell value = empty and not marked for deletion
-                boolean hasDeletionMark = SandboxTableUtils.hasDeletionMarkForColumn(sandboxResult, family, qualifier);
-
-                if (!hasDeletionMark &&
-                        !SandboxTableUtils.hasValueForColumn(sandboxResult, family, qualifier)) {
-                    sandboxNonExistentCells.add(cell);
-                }
-
-                if (hasDeletionMark) {
-                    sandboxMarkedAsDeletedCells.add(cell);
-                }
+        AtomicSandboxMutationOp op = new AtomicSandboxMutationOp(sandboxTable, rowId, increment) {
+            @Override
+            protected Result runMutationOnSandbox() throws IOException {
+                // increment normally
+                return sandboxTable.table.increment(increment);
             }
 
+            @Override
+            protected Result runMutationOnDirty(Map<Cell, ByteBuffer> originalCellToDirtyQualifMap) throws IOException {
+                // apply transformed increment
+                final Increment adaptedIncr = new Increment(rowId);
 
-            // fetch cells existing in original and not existing (or marked as deleted) in the sandbox
-            CellSet cellsExistingOnlyInOriginal = new CellSet();
-            if (sandboxNonExistentCells.size() > 0) {
-                // TODO narrow Get
-                // fetch non existent cells values from original table
-                originalResult = sandboxTable.originalTable.get(get);
+                for (Map.Entry<byte[], List<Cell>> appendOpFamMapEntry : increment.getFamilyCellMap().entrySet()) {
+                    final byte[] family = appendOpFamMapEntry.getKey();
 
-                // if they exist in the original, keep track of them to copy them later to dirty CF for manipulation
-                if (originalResult != null) {
-                    for (Cell cell : sandboxNonExistentCells) {
-                        byte[] family = CellUtil.cloneFamily(cell);
-                        byte[] qualifier = CellUtil.cloneQualifier(cell);
+                    for (Cell opCell : appendOpFamMapEntry.getValue()) {
+                        final byte[] qualifier = CellUtil.cloneQualifier(opCell);
+                        final byte[] value = CellUtil.cloneValue(opCell);
 
-                        if (originalResult.containsColumn(family, qualifier)) {
-                            cellsExistingOnlyInOriginal.add(cell);
+                        // if it's in dirty, ignore
+                        ByteBuffer dirtyQualifForCell = originalCellToDirtyQualifMap.get(opCell);
+                        if (dirtyQualifForCell != null) {
+                            // there's a dirty column for this one
+                            byte[] dirtyQualififer = dirtyQualifForCell.array();
+                            adaptedIncr.addColumn(SandboxTable.DEFAULT_DIRTY_CF, dirtyQualififer, Bytes.toLong(value));
+                        } else {
+                            adaptedIncr.addColumn(family, qualifier, Bytes.toLong(value));
                         }
                     }
                 }
+
+                return this.sandboxTable.table.increment(adaptedIncr);
             }
+        };
 
-            if (cellsExistingOnlyInOriginal.size() == 0) {
-                // increment normally
-                result = sandboxTable.table.increment(increment);
-            } else {
-                // initialize adapted increment definition
-                final Increment adaptedIncr = new Increment(rowId);
-
-                // copy cells from original to dirty columns
-                final Put putOnDirty = new Put(rowId);
-
-                for (Cell cell : cellsExistingOnlyInOriginal) {
-                    byte[] family = CellUtil.cloneFamily(cell);
-                    byte[] qualifier = CellUtil.cloneQualifier(cell);
-
-                    byte[] dirtyQualififer = new byte[transactionId.length + family.length + qualifier.length];
-                    System.arraycopy(transactionId, 0, dirtyQualififer, 0, transactionId.length);
-                    System.arraycopy(family, 0, dirtyQualififer, transactionId.length, family.length);
-                    System.arraycopy(qualifier, 0, dirtyQualififer, transactionId.length + family.length, qualifier.length);
-
-                    Cell originalResultCell = originalResult.getColumnLatestCell(family, qualifier);
-
-                    putOnDirty.add(SandboxTable.DEFAULT_DIRTY_CF, dirtyQualififer
-                            , originalResultCell.getTimestamp(), CellUtil.cloneValue(originalResultCell));
-
-                    // add the dirty column to the adapted increment
-                    long amount = increment.getFamilyMapOfLongs().get(family).get(qualifier).longValue();
-                    adaptedIncr.addColumn(SandboxTable.DEFAULT_DIRTY_CF, dirtyQualififer, amount);
-
-                    cellToDirtyColumnQualifMap.put(ByteBuffer.wrap(dirtyQualififer), cell);
-                }
-                sandboxTable.table.put(putOnDirty);
-                sandboxTable.table.flushCommits();
-
-                // apply transformed increment
-                result = sandboxTable.table.increment(adaptedIncr);
-
-                // copy results in dirty columns to sandboxes ones
-                Put putResults = new Put(rowId);
-                for (Cell cell : result.rawCells()) {
-                    ByteBuffer dirtyQualifierKey = ByteBuffer.wrap(CellUtil.cloneQualifier(cell));
-                    Cell originalCell = cellToDirtyColumnQualifMap.get(dirtyQualifierKey);
-
-                    if (originalCell != null) {
-                        byte[] family = CellUtil.cloneFamily(originalCell);
-                        byte[] qualifier = CellUtil.cloneQualifier(originalCell);
-                        byte[] value = CellUtil.cloneValue(originalCell);
-
-                        putResults.add(family, qualifier, value);
-                    }
-                }
-                sandboxTable.table.put(putResults);
-                sandboxTable.table.flushCommits();
-
-                // TODO returned result assertion
-            }
-
-            // delete deletion marks
-            if (sandboxMarkedAsDeletedCells.size() > 0) {
-                Delete delete = removeDeletionMark(rowId, sandboxMarkedAsDeletedCells);
-                sandboxTable.table.delete(delete);
-            }
-        } finally {
-            // delete any dirty column
-            if (cellToDirtyColumnQualifMap.size() > 0) {
-                Delete deleteDirty = new Delete(rowId);
-
-                for (ByteBuffer dirtyQualifKey : cellToDirtyColumnQualifMap.keySet()) {
-                    deleteDirty.deleteColumns(SandboxTable.DEFAULT_DIRTY_CF, dirtyQualifKey.array());
-                }
-                sandboxTable.table.delete(deleteDirty);
-            }
-
-            // release lock
-            releaseLock(sandboxTable, rowId, transactionId);
-        }
-
-        return result;
+        return op.runMutation();
     }
 
-    private static boolean acquireLock(SandboxTable sandboxTable, byte[] rowId, byte[] transactionId) throws IOException {
-        Put put = new Put(rowId);
-        put.add(SandboxTable.DEFAULT_DIRTY_CF, SandboxTable.DEFAULT_TID_COL, transactionId);
-        try {
-            return sandboxTable .table.checkAndPut(rowId,
-                    SandboxTable.DEFAULT_DIRTY_CF, SandboxTable.DEFAULT_TID_COL, null, put);
-        } catch (IOException e) {
-            throw new IOException(String.format("Could not acquire sandbox row lock for row = %s", Bytes.toString(rowId)), e);
-        }
-    }
-
-    private static boolean releaseLock(SandboxTable sandboxTable, byte[] rowId, byte[] transactionId) throws IOException {
-        Delete deleteLock = new Delete(rowId);
-        deleteLock.deleteColumns(SandboxTable.DEFAULT_DIRTY_CF, SandboxTable.DEFAULT_TID_COL);
-        try {
-            return sandboxTable .table.checkAndDelete(rowId,
-                    SandboxTable.DEFAULT_DIRTY_CF, SandboxTable.DEFAULT_TID_COL, transactionId, deleteLock);
-        } catch (IOException e) {
-            throw new IOException(String.format("Could not acquire sandbox row lock for row = %s", Bytes.toString(rowId)), e);
+    public static long incrementColumnValue(SandboxTable sandboxTable, byte[] row, byte[] family, byte[] qualifier, long amount, Durability durability) throws IOException {
+        if (!sandboxTable.sandboxFeatureEnabled) {
+            throw new UnsupportedOperationException(CANNOT_MUTATE_WHEN_DISABLED_MSG);
         }
 
+        Increment increment = new Increment(row);
+        increment.addColumn(family, qualifier, amount);
+        increment.setDurability(durability);
+
+        Result result = increment(sandboxTable, increment);
+        byte[] value = CellUtil.cloneValue(result.getColumnLatestCell(family, qualifier));
+        return Bytes.toLong(value);
     }
 
-    //    public static long incrementColumnValue(SandboxTable sandboxTable, byte[] row, byte[] family, byte[] qualifier, long amount, Durability durability) throws IOException {
-    //        final Get get = new Get(row);
-    //        get.addColumn(family, qualifier);
-    //        Result shadowResult = sandboxTable.table.get(enrichGet(get));
-    //        Result originalResult = null;
-    //
-    //        // iter family and qualifier
-    //        if (!SandboxTableUtils.hasDeletionMarkForColumn(shadowResult, family, qualifier) &&
-    //                !SandboxTableUtils.hasValueForColumn(shadowResult, family, qualifier)) {
-    //
-    //            // fetch only if needed
-    //            if (originalResult == null) {
-    //                originalResult = sandboxTable.originalTable.get(get);
-    //            }
-    //
-    //            // fill the sandbox with original's value first
-    //            if (originalResult.containsColumn(family, qualifier)) {
-    //                // read as long
-    //                long currentValue = Bytes.toLong(originalResult.getValue(family, qualifier));
-    //                long finalValue = currentValue + amount;
-    //
-    //                try {
-    //                    sandboxTable.checkAndPut(r, f, q, null, put));
-    //                } catch (DoNotRetryIOException ex) {
-    //                    exceptThrown = true;
-    //                }
-    //
-    //                Put fillPut = new Put(row);
-    //                fillPut.add(family, qualifier, originalResult.getValue(family, qualifier));
-    //                sandboxTable.table.put(fillPut);
-    //                sandboxTable.table.flushCommits();
-    //            }
-    //        }
-    //    }
-    
-    public static boolean checkAndPut(SandboxTable sandboxTable, byte[] row, byte[] family, byte[] qualifier, byte[] value, Put put) throws IOException {
-        final Get get = new Get(row);
-        get.addColumn(family, qualifier);
-        Result shadowResult = sandboxTable.table.get(enrichGet(get));
+    public static boolean checkAndPut(SandboxTable sandboxTable, final byte[] rowId, final byte[] family, final byte[] qualifier, final byte[] value, final Put put) throws IOException {
+        if (!sandboxTable.sandboxFeatureEnabled) {
+            throw new UnsupportedOperationException(CANNOT_MUTATE_WHEN_DISABLED_MSG);
+        }
 
-        // case the value exists in original but not on sandbox (nor was deleted in sandbox)
-        if (!SandboxTableUtils.hasDeletionMarkForColumn(shadowResult, family, qualifier) &&
-                !SandboxTableUtils.hasValueForColumn(shadowResult, family, qualifier)) {
-            Result originalResult = sandboxTable.originalTable.get(get);
+        AtomicSandboxCheckAndXOp op = new AtomicSandboxCheckAndXOp(sandboxTable, rowId, family, qualifier) {
 
-            // fill the sandbox with original's value first
-            if (originalResult.containsColumn(family, qualifier)) {
-                // TODO this put might polute the sandbox state and break stuff, so please adjust timestamp
-                Put fillPut = new Put(row);
-                fillPut.add(family, qualifier, originalResult.getValue(family, qualifier));
-                sandboxTable.table.put(fillPut);
-                sandboxTable.table.flushCommits();
+            @Override
+            protected boolean runCheckAndXOpOnSandbox() throws IOException {
+                RowMutations rm = _rowMutationsForPut(new RowMutations(put.getRow()), put);
+
+                // TODO retry?
+                return sandboxTable.table
+                        .checkAndMutate(rowId, family, qualifier,  CompareFilter.CompareOp.EQUAL, value, rm);
             }
-        }
 
-        boolean opSuccess = sandboxTable.table.checkAndPut(row, family, qualifier, value, put);
+            @Override
+            protected boolean runCheckAndXOpOnDirty(Map<Cell, ByteBuffer> originalCellToDirtyQualifMap) throws IOException {
+                RowMutations rm = _rowMutationsForPut(new RowMutations(put.getRow()), put);
 
-        if (opSuccess) {
-            Delete delete = removeDeletionMarkForPut(put);
-            sandboxTable.table.delete(delete);
-        }
+                Iterator<ByteBuffer> dirtyColIt = originalCellToDirtyQualifMap.values().iterator();
+                byte[] dirtyQualifier = dirtyColIt.next().array();
 
-        return opSuccess;
-    }
-
-    public static boolean checkAndDelete(SandboxTable sandboxTable, byte[] row, byte[] family, byte[] qualifier, byte[] value, Delete delete) throws IOException {
-        final Get get = new Get(row);
-        get.addColumn(family, qualifier);
-        Result shadowResult = sandboxTable.table.get(enrichGet(get));
-
-        // case the value exists in original but not on sandbox (nor was deleted in sandbox)
-        if (!SandboxTableUtils.hasDeletionMarkForColumn(shadowResult, family, qualifier) &&
-                !SandboxTableUtils.hasValueForColumn(shadowResult, family, qualifier)) {
-            Result originalResult = sandboxTable.originalTable.get(get);
-
-            // fill the sandbox with original's value first
-            if (originalResult.containsColumn(family, qualifier)) {
-                // TODO this put might polute the sandbox state and break stuff, so please adjust timestamp
-                Put fillPut = new Put(row);
-                fillPut.add(family, qualifier, originalResult.getValue(family, qualifier));
-                sandboxTable.table.put(fillPut);
-                sandboxTable.table.flushCommits();
+                return sandboxTable.table
+                        .checkAndMutate(rowId, SandboxTable.DEFAULT_DIRTY_CF, dirtyQualifier, CompareFilter.CompareOp.EQUAL, value, rm);
             }
-        }
+        };
 
-        boolean opSuccess = sandboxTable.table.checkAndDelete(row, family, qualifier, value, delete);
-
-        if (opSuccess) {
-            // TODO do smth or delete for other impl
-            //markAsDeleted(sandboxTable, delete);
-        }
-
-        return opSuccess;
+        return op.runOp();
     }
 
-    public static boolean checkAndMutate(SandboxTable sandboxTable, byte[] row, byte[] family, byte[] qualifier, CompareFilter.CompareOp compareOp, byte[] value, RowMutations rm) {
-        // TODO
-        return false;
+    public static boolean checkAndDelete(SandboxTable sandboxTable, byte[] rowId, final byte[] family, final byte[] qualifier, final byte[] value, final Delete delete) throws IOException {
+        if (!sandboxTable.sandboxFeatureEnabled) {
+            throw new UnsupportedOperationException(CANNOT_MUTATE_WHEN_DISABLED_MSG);
+        }
+
+        AtomicSandboxCheckAndXOp op = new AtomicSandboxCheckAndXOp(sandboxTable, rowId, family, qualifier) {
+
+            @Override
+            protected boolean runCheckAndXOpOnSandbox() throws IOException {
+                RowMutations rm = _rowMutationsForDelete(new RowMutations(delete.getRow()), sandboxTable, delete);
+
+                // TODO retry?
+                return sandboxTable.table
+                        .checkAndMutate(rowId, family, qualifier,  CompareFilter.CompareOp.EQUAL, value, rm);
+            }
+
+            @Override
+            protected boolean runCheckAndXOpOnDirty(Map<Cell, ByteBuffer> originalCellToDirtyQualifMap) throws IOException {
+                RowMutations rm = _rowMutationsForDelete(new RowMutations(delete.getRow()), sandboxTable, delete);
+
+                Iterator<ByteBuffer> dirtyColIt = originalCellToDirtyQualifMap.values().iterator();
+                byte[] dirtyQualifier = dirtyColIt.next().array();
+
+                return sandboxTable.table
+                        .checkAndMutate(rowId, SandboxTable.DEFAULT_DIRTY_CF, dirtyQualifier, CompareFilter.CompareOp.EQUAL, value, rm);
+            }
+        };
+
+        return op.runOp();
+    }
+
+    public static boolean checkAndMutate(SandboxTable sandboxTable, byte[] rowId, final byte[] family, final byte[] qualifier,
+                                         CompareFilter.CompareOp compareOp, final byte[] value, final RowMutations rowMutations) throws IOException {
+        if (!sandboxTable.sandboxFeatureEnabled) {
+            throw new UnsupportedOperationException(CANNOT_MUTATE_WHEN_DISABLED_MSG);
+        }
+
+        AtomicSandboxCheckAndXOp op = new AtomicSandboxCheckAndXOp(sandboxTable, rowId, family, qualifier) {
+
+            @Override
+            protected boolean runCheckAndXOpOnSandbox() throws IOException {
+                RowMutations adaptedRM = adaptRowMutations(sandboxTable, rowMutations);
+
+                // TODO retry?
+                return sandboxTable.table
+                        .checkAndMutate(rowId, family, qualifier,  CompareFilter.CompareOp.EQUAL, value, adaptedRM);
+            }
+
+            @Override
+            protected boolean runCheckAndXOpOnDirty(Map<Cell, ByteBuffer> originalCellToDirtyQualifMap) throws IOException {
+                RowMutations adaptedRM = adaptRowMutations(sandboxTable, rowMutations);
+
+                Iterator<ByteBuffer> dirtyColIt = originalCellToDirtyQualifMap.values().iterator();
+                byte[] dirtyQualifier = dirtyColIt.next().array();
+
+                return sandboxTable.table
+                        .checkAndMutate(rowId, SandboxTable.DEFAULT_DIRTY_CF, dirtyQualifier, CompareFilter.CompareOp.EQUAL, value, adaptedRM);
+            }
+        };
+
+        return op.runOp();
     }
 
     public static boolean exists(SandboxTable sandboxTable, Get get) throws IOException {
