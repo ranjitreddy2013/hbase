@@ -5,7 +5,7 @@
   <parent>
     <artifactId>hbase</artifactId>
     <groupId>org.apache.hbase</groupId>
-    <version>0.98.12-mapr-1506</version>
+    <version>0.98.12-mapr-1602</version>
     <relativePath>..</relativePath>
   </parent>
 
@@ -23,7 +23,7 @@
   </repositories>
 
   <properties>
-    <mapr.version>5.0.0-mapr</mapr.version>
+    <mapr.version>5.1.0-mapr</mapr.version>
     <mapr.home>/opt/mapr/lib</mapr.home>
   </properties>
 
@@ -137,10 +137,10 @@
                   <location>../hbase-client/target/hbase-client-${project.version}.jar</location>
                 </source>
                 <softlinkSource>
-                  <location>${mapr.lib.dir}/maprcli-5.0.0-mapr.jar</location>
+                  <location>${mapr.lib.dir}/maprcli-5.1.0-mapr.jar</location>
                 </softlinkSource>
                 <softlinkSource>
-                  <location>${mapr.lib.dir}/maprfs-5.0.0-mapr.jar</location>
+                  <location>${mapr.lib.dir}/maprfs-5.1.0-mapr.jar</location>
                 </softlinkSource>
               </sources>
             </mapping>

@@ -324,13 +324,13 @@
           <artifactId>maprfs</artifactId>
           <version>${mapr.version}</version>
           <scope>system</scope>
-          <systemPath>/opt/mapr/lib/maprfs-5.0.0-mapr.jar</systemPath>
+          <systemPath>/opt/mapr/lib/maprfs-5.1.0-mapr.jar</systemPath>
         </dependency>
       </dependencies>
 
       <properties>
         <hbase.skip-jacoco>false</hbase.skip-jacoco>
-        <mapr.version>5.0.0-mapr</mapr.version>
+        <mapr.version>5.1.0-mapr</mapr.version>
       </properties>
 
       <build>

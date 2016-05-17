@@ -5,7 +5,7 @@
   <parent>
     <artifactId>hbase</artifactId>
     <groupId>org.apache.hbase</groupId>
-    <version>0.98.12-mapr-1506</version>
+    <version>0.98.12-mapr-1602</version>
     <relativePath>..</relativePath>
   </parent>
 
@@ -14,7 +14,7 @@
   <description>Integration and System tests for Sandbox HBase client</description>
 
   <properties>
-    <mapr.version>5.0.0-mapr</mapr.version>
+    <mapr.version>5.1.0-mapr</mapr.version>
     <surefire.skipSecondPart>true</surefire.skipSecondPart>
   </properties>
 

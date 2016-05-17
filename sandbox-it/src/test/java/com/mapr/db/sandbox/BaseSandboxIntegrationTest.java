@@ -1,7 +1,6 @@
 package com.mapr.db.sandbox;
 
 import com.google.common.collect.Lists;
-import com.mapr.fs.MapRFileSystem;
 import com.mapr.db.sandbox.utils.SandboxAdminUtils;
 import com.mapr.fs.MapRFileSystem;
 import com.mapr.rest.MapRRestClient;
@@ -21,25 +20,26 @@ import org.junit.Before;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 
 public abstract class BaseSandboxIntegrationTest {
-	static final String CF1_NAME = "cf1";
-	static final String CF2_NAME = "cf2";
-	static final byte[] CF1 = CF1_NAME.getBytes();
-	static final byte[] CF2 = CF2_NAME.getBytes();
+    static final String CF1_NAME = "cf1";
+    static final String CF2_NAME = "cf2";
+    static final byte[] CF1 = CF1_NAME.getBytes();
+    static final byte[] CF2 = CF2_NAME.getBytes();
 
-	
-	static final String COL1_NAME = "col_x";
-	static final String COL2_NAME = "col_y";
-	static final byte[] COL1 = COL1_NAME.getBytes();
-	static final byte[] COL2 = COL2_NAME.getBytes();
-	
-	protected static String TEST_WORKING_DIR_PREFIX;
+    static final String COL1_NAME = "col_x";
+    static final String COL2_NAME = "col_y";
+    static final byte[] COL1 = COL1_NAME.getBytes();
+    static final byte[] COL2 = COL2_NAME.getBytes();
+
+    protected static String TEST_WORKING_DIR_PREFIX;
     protected static Configuration conf;
     protected static HBaseAdmin hba;
     protected static MapRFileSystem fs;
     protected static SandboxAdmin sandboxAdmin;
     protected static CompositeConfiguration testConfig = new CompositeConfiguration();
+
     final Scan scan = new Scan();
     final MapRRestClient restClient;
 
@@ -50,36 +50,34 @@ public abstract class BaseSandboxIntegrationTest {
             fs = (MapRFileSystem) FileSystem.get(conf);
             sandboxAdmin = new SandboxAdmin(conf);
         } catch (IOException e) {
-        	throw new RuntimeException(e);
+            throw new RuntimeException(e);
         } catch (SandboxException e) {
-        	throw new RuntimeException(e);
+            throw new RuntimeException(e);
         }
-        
-		// load configuration
-		try {
-			testConfig.addConfiguration(new SystemConfiguration());
-			testConfig.addConfiguration(new PropertiesConfiguration(
-					"sandbox-integration-tests.properties"));
-		} catch (ConfigurationException e) {
-			throw new RuntimeException(e);
-		}
 
+        // load configuration
+        try {
+            testConfig.addConfiguration(new SystemConfiguration());
+            testConfig.addConfiguration(new PropertiesConfiguration("sandbox-integration-tests.properties"));
+        } catch (ConfigurationException e) {
+            throw new RuntimeException(e);
+        }
     }
 
-	public BaseSandboxIntegrationTest() {
-		TEST_WORKING_DIR_PREFIX = testConfig.getString(
-				"sandbox.test.working_dir_prefix", "/sandbox-it");
-		String[] restUrls = testConfig.getStringArray("sandbox.test.rest_urls");
-		String username = testConfig.getString("sandbox.test.username", "mapr");
-		String password = testConfig.getString("sandbox.test.password", "mapr");
+    public BaseSandboxIntegrationTest() {
+        TEST_WORKING_DIR_PREFIX = testConfig.getString("sandbox.test.working_dir_prefix", "/sandbox-it");
+        String[] restUrls = testConfig.getStringArray("sandbox.test.rest_urls");
+        String username = testConfig.getString("sandbox.test.username", "mapr");
+        String password = testConfig.getString("sandbox.test.password", "mapr");
 
-		try {
-			restClient = new MapRRestClient(restUrls, username, password);
-		} catch (SandboxException e) {
-			throw new RuntimeException(e);
-		}
-	}
-	
+
+        try {
+            restClient = new MapRRestClient(restUrls, username, password);
+        } catch (SandboxException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     protected String testWorkingDir;
 
     protected String originalTablePath;
